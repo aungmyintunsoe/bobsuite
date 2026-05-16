@@ -51,7 +51,7 @@ This document explains what each file does, how they work together, and the over
 - `_build_documentation_prompt()` - Creates prompts for docs
 
 **Model Used:**
-- Default: `ibm/granite-13b-chat-v2` (Granite 13B Chat)
+- Default: `ibm/granite-4-h-small
 - Configurable via parameter
 
 **Environment Variables Required:**
@@ -148,13 +148,10 @@ Source code, markup, config files, documentation (30+ extensions)
 
 #### `requirements.txt` - Python Dependencies
 Lists all required Python packages:
-- `ibm-watsonx-ai` - IBM watsonx.ai SDK
 - `python-dotenv` - Environment variable management
 - `mcp` - Model Context Protocol implementation
 - `requests` - HTTP library
 
-#### `.env.example` - Environment Template
-Template for required environment variables. Copy to `.env` and fill in your credentials.
 
 #### `test_watsonx.py` - Test Suite
 Comprehensive test script to verify:
@@ -196,20 +193,7 @@ Routes to appropriate module:
 
 ## 🤖 Model Information
 
-### Current Model: IBM Granite 13B Chat v2
-
-**Model ID:** `ibm/granite-13b-chat-v2`
-
-**Characteristics:**
-- 13 billion parameters
-- Optimized for chat and instruction following
-- Good for code analysis and documentation
-- Available in IBM watsonx.ai
-
-**Alternative Models Available:**
-- `ibm/granite-13b-instruct-v2` - Instruction-tuned variant
-- `meta-llama/llama-2-70b-chat` - Larger model (if available)
-- `google/flan-ul2` - Google's instruction-tuned model
+### Current Model: IBM Granite-4-h-small
 
 **For IBM Bob Hackathon:**
 The Granite models are IBM's own models and should be available in your watsonx.ai project. They're specifically designed for enterprise use cases including code analysis.
