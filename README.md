@@ -48,11 +48,11 @@ bobsuite-monorepo/
 # 1. Install dependencies
 cd mcp_server
 python -m venv venv
-venv\Scripts\activate  # Windows
+venv\Scripts\activate  # Windows for 
 pip install -r requirements.txt
 
 # 2. Configure credentials
-cp .env.example .env
+cp .env
 # Edit .env with your IBM_API_KEY and PROJECT_ID
 
 # 3. Test connection
