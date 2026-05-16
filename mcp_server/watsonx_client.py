@@ -66,7 +66,6 @@ class WatsonxClient:
         
         Args:
             prompt: The input prompt
-            model_id: Model identifier (default: granite-13b-chat-v2)
             max_tokens: Maximum tokens to generate
             temperature: Sampling temperature (0.0-1.0)
             **kwargs: Additional model parameters
@@ -106,69 +105,5 @@ class WatsonxClient:
                 
         except Exception as e:
             raise RuntimeError(f"Error generating text with watsonx.ai: {str(e)}")
-    
-    async def analyze_code(
-        self,
-        code: str,
-        analysis_type: str = "quality",
-        language: Optional[str] = None
-    ) -> Dict[str, Any]:
-        """Analyze code using watsonx.ai"""
-        prompt = self._build_analysis_prompt(code, analysis_type, language)
-        response = await self.generate_text(prompt, temperature=0.3)
-        
-        return {
-            "analysis_type": analysis_type,
-            "language": language or "auto-detected",
-            "results": response
-        }
-    
-    async def generate_documentation(
-        self,
-        code: str,
-        doc_type: str = "full",
-        language: Optional[str] = None
-    ) -> str:
-        """Generate documentation for code using watsonx.ai"""
-        prompt = self._build_documentation_prompt(code, doc_type, language)
-        response = await self.generate_text(prompt, temperature=0.5)
-        
-        return response
-    
-    def _build_analysis_prompt(
-        self,
-        code: str,
-        analysis_type: str,
-        language: Optional[str]
-    ) -> str:
-        """Build prompt for code analysis"""
-        lang_hint = f" ({language})" if language else ""
-        
-        prompts = {
-            "bugs": f"Analyze the following code{lang_hint} for potential bugs and errors:\n\n{code}\n\nProvide a detailed list of bugs found.",
-            "vulnerabilities": f"Analyze the following code{lang_hint} for security vulnerabilities:\n\n{code}\n\nProvide a detailed security assessment.",
-            "quality": f"Analyze the following code{lang_hint} for code quality issues:\n\n{code}\n\nProvide suggestions for improvement.",
-            "all": f"Perform a comprehensive analysis of the following code{lang_hint} including bugs, vulnerabilities, and quality issues:\n\n{code}\n\nProvide a detailed report."
-        }
-        
-        return prompts.get(analysis_type, prompts["all"])
-    
-    def _build_documentation_prompt(
-        self,
-        code: str,
-        doc_type: str,
-        language: Optional[str]
-    ) -> str:
-        """Build prompt for documentation generation"""
-        lang_hint = f" ({language})" if language else ""
-        
-        prompts = {
-            "inline": f"Add inline comments and docstrings to the following code{lang_hint}:\n\n{code}",
-            "api": f"Generate API documentation for the following code{lang_hint}:\n\n{code}",
-            "readme": f"Generate a README.md section documenting the following code{lang_hint}:\n\n{code}",
-            "full": f"Generate comprehensive documentation including inline comments, API docs, and usage examples for the following code{lang_hint}:\n\n{code}"
-        }
-        
-        return prompts.get(doc_type, prompts["full"])
 
 # Made with Bob

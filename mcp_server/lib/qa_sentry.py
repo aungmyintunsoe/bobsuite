@@ -46,16 +46,36 @@ class QASentry:
         language = detect_language(file_path)
         
         # Perform analysis
-        analysis = await self.watsonx.analyze_code(
-            code=code,
-            analysis_type=scan_type,
-            language=language
-        )
+        prompt = self._build_analysis_prompt(code, scan_type, language)
+        response = await self.watsonx.generate_text(prompt, temperature=0.3)
         
         # Parse and structure results
+        analysis = {
+            "analysis_type": scan_type,
+            "language": language or "auto-detected",
+            "results": response
+        }
         results = self._structure_results(analysis, file_path, scan_type)
         
         return results
+    
+    def _build_analysis_prompt(
+        self,
+        code: str,
+        analysis_type: str,
+        language: Optional[str]
+    ) -> str:
+        """Build prompt for code analysis"""
+        lang_hint = f" ({language})" if language else ""
+        
+        prompts = {
+            "bugs": f"Analyze the following code{lang_hint} for potential bugs and errors:\n\n{code}\n\nProvide a detailed list of bugs found.",
+            "vulnerabilities": f"Analyze the following code{lang_hint} for security vulnerabilities:\n\n{code}\n\nProvide a detailed security assessment.",
+            "quality": f"Analyze the following code{lang_hint} for code quality issues:\n\n{code}\n\nProvide suggestions for improvement.",
+            "all": f"Perform a comprehensive analysis of the following code{lang_hint} including bugs, vulnerabilities, and quality issues:\n\n{code}\n\nProvide a detailed report."
+        }
+        
+        return prompts.get(analysis_type, prompts["all"])
     
     def _structure_results(
         self,

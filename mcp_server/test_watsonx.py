@@ -11,6 +11,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 
 from watsonx_client import WatsonxClient
+from lib.qa_sentry import QASentry
+from lib.doc_engine import DocEngine
 
 
 async def test_connection():
@@ -79,17 +81,13 @@ def calculate_sum(a, b):
 result = calculate_sum(5, 10)
 print(result)
 """
+        qa = QASentry(client)
+        prompt = qa._build_analysis_prompt(test_code, "quality", "Python")
         
-        analysis = await client.analyze_code(
-            code=test_code,
-            analysis_type="quality",
-            language="Python"
-        )
+        response = await client.generate_text(prompt, temperature=0.3)
         
-        print("   ✓ Code analysis successful!")
-        print(f"\n   Analysis Type: {analysis['analysis_type']}")
-        print(f"   Language: {analysis['language']}")
-        print(f"   Results Preview: {analysis['results'][:150]}...")
+        print("   ✓ Code analysis prompt & generation successful!")
+        print(f"   Results Preview: {response[:150]}...")
         
     except Exception as e:
         print(f"   ✗ Code Analysis Error: {e}")
@@ -99,14 +97,13 @@ print(result)
     try:
         print("\n4. Testing documentation generation...")
         
-        docs = await client.generate_documentation(
-            code=test_code,
-            doc_type="inline",
-            language="Python"
-        )
+        doc = DocEngine(client)
+        prompt = doc._build_documentation_prompt(test_code, "inline", "Python")
+        
+        response = await client.generate_text(prompt, temperature=0.5)
         
         print("   ✓ Documentation generation successful!")
-        print(f"\n   Documentation Preview: {docs[:150]}...")
+        print(f"\n   Documentation Preview: {response[:150]}...")
         
     except Exception as e:
         print(f"   ✗ Documentation Generation Error: {e}")

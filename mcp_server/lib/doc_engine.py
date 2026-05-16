@@ -44,11 +44,8 @@ class DocEngine:
         language = detect_language(file_path)
         
         # Generate documentation
-        documentation = await self.watsonx.generate_documentation(
-            code=code,
-            doc_type=doc_type,
-            language=language
-        )
+        prompt = self._build_documentation_prompt(code, doc_type, language)
+        documentation = await self.watsonx.generate_text(prompt, temperature=0.5)
         
         # Format the documentation
         formatted_docs = self._format_documentation(
@@ -59,6 +56,24 @@ class DocEngine:
         )
         
         return formatted_docs
+    
+    def _build_documentation_prompt(
+        self,
+        code: str,
+        doc_type: str,
+        language: Optional[str]
+    ) -> str:
+        """Build prompt for documentation generation"""
+        lang_hint = f" ({language})" if language else ""
+        
+        prompts = {
+            "inline": f"Add inline comments and docstrings to the following code{lang_hint}:\n\n{code}",
+            "api": f"Generate API documentation for the following code{lang_hint}:\n\n{code}",
+            "readme": f"Generate a README.md section documenting the following code{lang_hint}:\n\n{code}",
+            "full": f"Generate comprehensive documentation including inline comments, API docs, and usage examples for the following code{lang_hint}:\n\n{code}"
+        }
+        
+        return prompts.get(doc_type, prompts["full"])
     
     def _format_documentation(
         self,
