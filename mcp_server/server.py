@@ -1,6 +1,6 @@
 """
 MCP Server Entry Point for IBM Bob Integration
-Provides tools for code quality analysis, documentation generation, and file management
+Provides tools for code quality analysis and documentation generation, powered by IBM watsonx.ai
 """
 
 import asyncio
@@ -17,7 +17,6 @@ from mcp.types import Tool, TextContent
 from watsonx_client import WatsonxClient
 from lib.qa_sentry import QASentry
 from lib.doc_engine import DocEngine
-from lib.file_manager import FileManager
 
 
 class BobSuiteMCPServer:
@@ -28,7 +27,6 @@ class BobSuiteMCPServer:
         self.watsonx = WatsonxClient()
         self.qa_sentry = QASentry(self.watsonx)
         self.doc_engine = DocEngine(self.watsonx)
-        self.file_manager = FileManager()
         
         self._register_handlers()
     
@@ -77,20 +75,7 @@ class BobSuiteMCPServer:
                         "required": ["file_path"]
                     }
                 ),
-                Tool(
-                    name="read_dataset_file",
-                    description="Read and analyze files from the dataset_balancia test project",
-                    inputSchema={
-                        "type": "object",
-                        "properties": {
-                            "file_path": {
-                                "type": "string",
-                                "description": "Relative path within dataset_balancia/"
-                            }
-                        },
-                        "required": ["file_path"]
-                    }
-                )
+
             ]
         
         @self.server.call_tool()
@@ -111,11 +96,6 @@ class BobSuiteMCPServer:
                 )
                 return [TextContent(type="text", text=result)]
             
-            elif name == "read_dataset_file":
-                result = self.file_manager.read_dataset_file(
-                    arguments.get("file_path")
-                )
-                return [TextContent(type="text", text=result)]
             
             else:
                 raise ValueError(f"Unknown tool: {name}")
