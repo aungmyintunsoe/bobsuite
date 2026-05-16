@@ -26,7 +26,7 @@ async def test_connection():
         print("\n1. Initializing WatsonxClient...")
         client = WatsonxClient()
         print("   ✓ Client initialized successfully")
-        print(f"   - API Key: {client.api_key[:10]}..." if client.api_key else "   - API Key: Not set")
+        print(f"   - API Key: {client.api_key[:5]}..." if client.api_key else "   - API Key: Not set")
         print(f"   - Project ID: {client.project_id}")
         print(f"   - URL: {client.watsonx_url}")
         
@@ -103,7 +103,7 @@ print(result)
         response = await client.generate_text(prompt, temperature=0.5)
         
         print("   ✓ Documentation generation successful!")
-        print(f"\n   Documentation Preview: {response[:150]}...")
+        print(f"\n   Documentation Preview: {response[:40]}...")
         
     except Exception as e:
         print(f"   ✗ Documentation Generation Error: {e}")
@@ -115,40 +115,6 @@ print(result)
     return True
 
 
-async def test_available_models():
-    """Test which models are available in your project"""
-    print("\n" + "=" * 60)
-    print("Checking Available Models")
-    print("=" * 60)
-    
-    try:
-        client = WatsonxClient()
-        
-        # Try different models
-        models_to_test = [
-            "ibm/granite-13b-chat-v2",
-            "ibm/granite-13b-instruct-v2",
-            "meta-llama/llama-2-70b-chat",
-            "google/flan-ul2",
-        ]
-        
-        print("\nTesting models (this may take a moment)...")
-        
-        for model_id in models_to_test:
-            try:
-                print(f"\n  Testing: {model_id}")
-                response = await client.generate_text(
-                    prompt="Hello",
-                    model_id=model_id,
-                    max_tokens=10
-                )
-                print(f"  ✓ {model_id} - Available")
-            except Exception as e:
-                print(f"  ✗ {model_id} - Not available or error: {str(e)[:50]}")
-        
-    except Exception as e:
-        print(f"\n✗ Error checking models: {e}")
-
 
 def main():
     """Main test runner"""
@@ -157,14 +123,6 @@ def main():
     # Run connection test
     success = asyncio.run(test_connection())
     
-    if success:
-        # Optionally test available models
-        print("\n" + "=" * 60)
-        response = input("Would you like to test available models? (y/n): ")
-        if response.lower() == 'y':
-            asyncio.run(test_available_models())
-    
-    print("\n✨ Test complete!\n")
 
 
 if __name__ == "__main__":
