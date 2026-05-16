@@ -2,6 +2,8 @@
 
 A Model Context Protocol (MCP) server that extends IBM Bob's capabilities with AI-powered code analysis and documentation tools, powered by IBM watsonx.ai.
 
+To view the architecture diagrams in this document properly, please install the Markdown Preview Mermaid Support extension by Matt Bierner.
+
 ## 🎯 Project Overview
 
 BobSuite MCP is a tool suite that allows IBM Bob to:
@@ -96,15 +98,43 @@ Generate comprehensive documentation for code.
 Generate documentation for dataset_balancia/utils.py with doc_type "full"
 ```
 
-### 3. **read_dataset_file**
-Read and analyze files from the dataset_balancia directory.
+### 3. **generate_dependency_chain** 🆕
+Generate visual dependency chain diagrams showing module relationships and imports.
 
 **Parameters:**
-- `file_path` (required): Relative path within dataset_balancia/
+- `project_path` (required): Root directory of the project to analyze
+- `output_path` (optional): Path to save the diagram markdown file
+- `max_depth` (optional): Maximum depth of dependency traversal (default: 3)
+- `include_external` (optional): Include external library dependencies (default: false)
 
 **Example:**
 ```
-Read dataset_balancia/config.json
+Generate a dependency chain for the mcp_server directory and save it to visualizations/
+```
+
+### 4. **generate_feature_flow** 🆕
+Generate visual feature flow maps showing user journeys and data flows through the system.
+
+**Parameters:**
+- `project_path` (required): Root directory of the project to analyze
+- `feature_name` (optional): Specific feature to map (if not provided, maps all major features)
+- `output_path` (optional): Path to save the diagram markdown file
+
+**Example:**
+```
+Generate a feature flow map for the dataset_balancia project
+```
+
+### 5. **generate_project_concept** 🆕
+Generate high-level project concept maps showing architecture overview and component relationships.
+
+**Parameters:**
+- `project_path` (required): Root directory of the project to analyze
+- `output_path` (optional): Path to save the diagram markdown file
+
+**Example:**
+```
+Generate a project concept map for the entire bobsuite project
 ```
 
 ## 📊 Features
@@ -123,12 +153,12 @@ Read dataset_balancia/config.json
 - **Usage Examples**: Generate code examples
 - **Project-wide Docs**: Document entire codebases
 
-### File Manager
-- **Smart Reading**: Read and format code files
-- **File Search**: Search across the dataset
-- **Structure Analysis**: Understand project layout
-- **Statistics**: File metrics and analysis
-- **Index Creation**: Organize files by type
+### Visualizer Engine 🆕
+- **Dependency Chain**: Visual module relationship diagrams
+- **Feature Flow Maps**: User journey and data flow visualization
+- **Project Concept Maps**: High-level architecture overview
+- **Mermaid Diagrams**: Beautiful, renderable diagrams in markdown
+- **Onboarding Tool**: Perfect for new contributors to understand the project
 
 ## 🎓 Usage Examples
 
@@ -142,9 +172,19 @@ Bob, use the scan_code_quality tool to analyze dataset_balancia/app.py for all i
 Bob, generate full documentation for dataset_balancia/models.py
 ```
 
-### Example 3: Read and Analyze
+### Example 3: Generate Dependency Chain 🆕
 ```
-Bob, read dataset_balancia/README.md and summarize the project
+Bob, generate a dependency chain for the mcp_server directory with external dependencies included
+```
+
+### Example 4: Generate Feature Flow Map 🆕
+```
+Bob, create a feature flow visualization for the dataset_balancia project
+```
+
+### Example 5: Generate Project Concept Map 🆕
+```
+Bob, generate a project concept map showing the architecture of the entire bobsuite project
 ```
 
 ## 🔧 Testing & Development

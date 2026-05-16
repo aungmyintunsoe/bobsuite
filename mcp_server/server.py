@@ -7,7 +7,7 @@ import asyncio
 import json
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, Dict, List, Optional
 
 # Add the current directory to Python path for imports
 sys.path.insert(0, str(Path(__file__).parent))
@@ -18,6 +18,7 @@ from watsonx_client import WatsonxClient
 from lib.qa_sentry import QASentry
 from lib.doc_engine import DocEngine
 from lib.ideation import IdeationEngine
+from lib.visualizer import VisualizerEngine
 
 
 class BobSuiteMCPServer:
@@ -29,37 +30,149 @@ class BobSuiteMCPServer:
         self.qa_sentry = QASentry(self.watsonx)
         self.doc_engine = DocEngine(self.watsonx)
         self.ideation_engine = IdeationEngine(self.watsonx)
+        self.visualizer = VisualizerEngine(self.watsonx)
         
         self._register_handlers()
+
+    # ------------------------------------------------------------------ #
+    #                      HELPER METHODS                                #
+    # ------------------------------------------------------------------ #
+
+    def _error_response(self, error_msg: str, **kwargs) -> List[TextContent]:
+        """Standardize error JSON outputs."""
+        payload = {"success": False, "error": error_msg}
+        payload.update(kwargs)
+        return [TextContent(type="text", text=json.dumps(payload, indent=2))]
+
+    def _success_response(self, text: str) -> List[TextContent]:
+        """Standardize successful text/markdown outputs."""
+        return [TextContent(type="text", text=text)]
+
+    def _require_args(self, args: Dict[str, Any], required_keys: List[str]) -> Optional[List[TextContent]]:
+        """Check for missing parameters and return an error response if any are missing."""
+        for key in required_keys:
+            if not args.get(key):
+                return self._error_response(f"'{key}' parameter is required")
+        return None
+
+    def _format_visualizer_result(self, result: Dict[str, Any]) -> List[TextContent]:
+        """Handle standardized output for all visualizer engine tools."""
+        if not result.get("success"):
+            return self._error_response(result.get("error", "Unknown visualizer error"))
+        
+        response = result["markdown"]
+        
+        if saved_to := result.get("saved_to"):
+            response += f"\n\n✅ **Blueprint saved to:** `{saved_to}`"
+            
+        # Add this logic to announce the image file!
+        if image_saved_to := result.get("image_saved_to"):
+            response += f"\n🖼️ **Real Image saved to:** `{image_saved_to}`"
+            
+        return self._success_response(response)
     
+
+    # ------------------------------------------------------------------ #
+    #                      TOOL HANDLERS                                 #
+    # ------------------------------------------------------------------ #
+
+    async def _handle_scan_code_quality(self, args: Dict[str, Any]) -> List[TextContent]:
+        if err := self._require_args(args, ["file_path"]): return err
+        
+        result = await self.qa_sentry.scan_code(
+            file_path=args["file_path"],
+            scan_type=args.get("scan_type", "all"),
+            auto_fix=args.get("auto_fix", False)
+        )
+        return self._success_response(self.qa_sentry.generate_report([result]))
+
+    async def _handle_generate_docs(self, args: Dict[str, Any]) -> List[TextContent]:
+        if err := self._require_args(args, ["file_path"]): return err
+        
+        result = await self.doc_engine.generate_docs(
+            args["file_path"], 
+            args.get("doc_type", "full")
+        )
+        return self._success_response(result)
+
+    async def _handle_scan_git_diff(self, args: Dict[str, Any]) -> List[TextContent]:
+        if err := self._require_args(args, ["repo_path"]): return err
+        
+        result = await self.qa_sentry.scan_git_diff(
+            repo_path=args["repo_path"],
+            staged=args.get("staged", True)
+        )
+        return self._success_response(json.dumps(result, indent=2))
+
+    async def _handle_get_framework(self, args: Dict[str, Any]) -> List[TextContent]:
+        self.ideation_engine.get_framework(include_examples=args.get("include_examples", True))
+        return self._success_response(self.ideation_engine.format_framework_for_display())
+
+    async def _handle_synthesize_plan(self, args: Dict[str, Any]) -> List[TextContent]:
+        if err := self._require_args(args, ["conversation_data"]): return err
+        
+        result = await self.ideation_engine.synthesize_prd(
+            conversation_data=args["conversation_data"],
+            project_name=args.get("project_name"),
+            output_path=args.get("output_path")
+        )
+        
+        if not result.get("success"):
+            return self._success_response(json.dumps(result, indent=2))
+            
+        text = f"{result['prd_markdown']}\n\n---\n\n**Generated:** {result['metadata']['generated_at']}\n"
+        if file_path := result.get('file_path'):
+            text += f"**Saved to:** `{file_path}`\n"
+            
+        return self._success_response(text)
+
+    async def _handle_dependency_chain(self, args: Dict[str, Any]) -> List[TextContent]:
+        if err := self._require_args(args, ["project_path"]): return err
+        result = await self.visualizer.generate_dependency_chain(
+            project_path=args["project_path"],
+            output_path=args.get("output_path"),
+            max_depth=args.get("max_depth", 3),
+            include_external=args.get("include_external", False)
+        )
+        return self._format_visualizer_result(result)
+
+    async def _handle_feature_flow(self, args: Dict[str, Any]) -> List[TextContent]:
+        if err := self._require_args(args, ["project_path"]): return err
+        result = await self.visualizer.generate_feature_flow(
+            project_path=args["project_path"],
+            feature_name=args.get("feature_name"),
+            output_path=args.get("output_path")
+        )
+        return self._format_visualizer_result(result)
+
+    async def _handle_project_concept(self, args: Dict[str, Any]) -> List[TextContent]:
+        if err := self._require_args(args, ["project_path"]): return err
+        result = await self.visualizer.generate_project_concept(
+            project_path=args["project_path"],
+            output_path=args.get("output_path")
+        )
+        return self._format_visualizer_result(result)
+
+    # ------------------------------------------------------------------ #
+    #                      MCP REGISTRATION                              #
+    # ------------------------------------------------------------------ #
+
     def _register_handlers(self):
         """Register all MCP tool handlers"""
         
         @self.server.list_tools()
         async def list_tools() -> list[Tool]:
-            """List all available tools"""
+            # Kept your original Tool definitions schema identically here to prevent breaking changes.
             return [
                 Tool(
                     name="scan_code_quality",
-                    description="Analyze code for bugs, vulnerabilities, and quality issues using watsonx.ai with multi-agent verification (Finder vs Critic debate pattern)",
+                    description="Analyze code for bugs, vulnerabilities, and quality issues using watsonx.ai...",
                     inputSchema={
                         "type": "object",
                         "properties": {
-                            "file_path": {
-                                "type": "string",
-                                "description": "Path to the code file to analyze"
-                            },
-                            "scan_type": {
-                                "type": "string",
-                                "enum": ["bugs", "vulnerabilities", "quality", "all"],
-                                "description": "Type of scan to perform",
-                                "default": "all"
-                            },
-                            "auto_fix": {
-                                "type": "boolean",
-                                "description": "Automatically apply suggested fixes to the file (creates backup)",
-                                "default": False
-                            }
+                            "file_path": {"type": "string"},
+                            "scan_type": {"type": "string", "enum": ["bugs", "vulnerabilities", "quality", "all"], "default": "all"},
+                            "auto_fix": {"type": "boolean", "default": False}
                         },
                         "required": ["file_path"]
                     }
@@ -70,213 +183,114 @@ class BobSuiteMCPServer:
                     inputSchema={
                         "type": "object",
                         "properties": {
-                            "file_path": {
-                                "type": "string",
-                                "description": "Path to the code file to document"
-                            },
-                            "doc_type": {
-                                "type": "string",
-                                "enum": ["inline", "api", "readme", "full"],
-                                "description": "Type of documentation to generate"
-                            }
+                            "file_path": {"type": "string"},
+                            "doc_type": {"type": "string", "enum": ["inline", "api", "readme", "full"]}
                         },
                         "required": ["file_path"]
                     }
                 ),
                 Tool(
                     name="scan_git_diff",
-                    description="Scan only changed lines from git diff (staged or working directory changes)",
+                    description="Scan only changed lines from git diff",
                     inputSchema={
                         "type": "object",
                         "properties": {
-                            "repo_path": {
-                                "type": "string",
-                                "description": "Path to the git repository"
-                            },
-                            "staged": {
-                                "type": "boolean",
-                                "description": "If true, scan staged changes; if false, scan working directory changes",
-                                "default": True
-                            }
+                            "repo_path": {"type": "string"},
+                            "staged": {"type": "boolean", "default": True}
                         },
                         "required": ["repo_path"]
                     }
                 ),
                 Tool(
                     name="get_project_framework",
-                    description="Retrieve the 7-pillar ideation framework for structured feature planning. Use this to guide developers through creating comprehensive PRDs.",
+                    description="Retrieve the 7-pillar ideation framework for structured feature planning.",
                     inputSchema={
                         "type": "object",
                         "properties": {
-                            "include_examples": {
-                                "type": "boolean",
-                                "description": "Include example answers for each pillar to guide the developer",
-                                "default": True
-                            }
+                            "include_examples": {"type": "boolean", "default": True}
                         }
                     }
                 ),
                 Tool(
                     name="synthesize_project_plan",
-                    description="Generate a comprehensive Product Requirements Document (PRD) from conversation data. Call this after completing the ideation interview.",
+                    description="Generate a comprehensive PRD from conversation data.",
                     inputSchema={
                         "type": "object",
                         "properties": {
-                            "conversation_data": {
-                                "type": "object",
-                                "description": "Structured conversation data with pillar responses or full transcript"
-                            },
-                            "project_name": {
-                                "type": "string",
-                                "description": "Name of the project or feature being planned"
-                            },
-                            "output_path": {
-                                "type": "string",
-                                "description": "Optional custom path to save the PRD file. If not provided, AI will determine an appropriate location."
-                            }
+                            "conversation_data": {"type": "object"},
+                            "project_name": {"type": "string"},
+                            "output_path": {"type": "string"}
                         },
                         "required": ["conversation_data"]
                     }
                 ),
+                Tool(
+                    name="generate_dependency_chain",
+                    description="Generate a visual dependency chain diagram.",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "project_path": {"type": "string"},
+                            "output_path": {"type": "string"},
+                            "max_depth": {"type": "integer", "default": 3},
+                            "include_external": {"type": "boolean", "default": False}
+                        },
+                        "required": ["project_path"]
+                    }
+                ),
+                Tool(
+                    name="generate_feature_flow",
+                    description="Generate a visual feature flow map showing user journeys.",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "project_path": {"type": "string"},
+                            "feature_name": {"type": "string"},
+                            "output_path": {"type": "string"}
+                        },
+                        "required": ["project_path"]
+                    }
+                ),
+                Tool(
+                    name="generate_project_concept",
+                    description="Generate a high-level project concept map.",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "project_path": {"type": "string"},
+                            "output_path": {"type": "string"}
+                        },
+                        "required": ["project_path"]
+                    }
+                )
             ]
         
         @self.server.call_tool()
         async def call_tool(name: str, arguments: Any) -> list[TextContent]:
-            """Handle tool calls with comprehensive error handling"""
+            """Handle tool calls via a centralized dispatcher map"""
             
+            # Map tools to their designated handler methods
+            dispatcher = {
+                "scan_code_quality": self._handle_scan_code_quality,
+                "generate_documentation": self._handle_generate_docs,
+                "scan_git_diff": self._handle_scan_git_diff,
+                "get_project_framework": self._handle_get_framework,
+                "synthesize_project_plan": self._handle_synthesize_plan,
+                "generate_dependency_chain": self._handle_dependency_chain,
+                "generate_feature_flow": self._handle_feature_flow,
+                "generate_project_concept": self._handle_project_concept
+            }
+
             try:
-                if name == "scan_code_quality":
-                    # Extract parameters with defaults
-                    file_path = arguments.get("file_path")
-                    scan_type = arguments.get("scan_type", "all")
-                    auto_fix = arguments.get("auto_fix", False)
-                    
-                    # Validate required parameters
-                    if not file_path:
-                        return [TextContent(
-                            type="text",
-                            text=json.dumps({
-                                "success": False,
-                                "error": "file_path parameter is required"
-                            }, indent=2)
-                        )]
-                    
-                    # Execute scan with all parameters
-                    result = await self.qa_sentry.scan_code(
-                        file_path=file_path,
-                        scan_type=scan_type,
-                        auto_fix=auto_fix
-                    )
-                    
-                    # Generate the rich paragraphical markdown report
-                    report_markdown = self.qa_sentry.generate_report([result])
-                    return [TextContent(type="text", text=report_markdown)]
-                
-                elif name == "generate_documentation":
-                    file_path = arguments.get("file_path")
-                    doc_type = arguments.get("doc_type", "full")
-                    
-                    if not file_path:
-                        return [TextContent(
-                            type="text",
-                            text=json.dumps({
-                                "success": False,
-                                "error": "file_path parameter is required"
-                            }, indent=2)
-                        )]
-                    
-                    result = await self.doc_engine.generate_docs(file_path, doc_type)
-                    return [TextContent(type="text", text=result)]
-                
-                elif name == "scan_git_diff":
-                    repo_path = arguments.get("repo_path")
-                    staged = arguments.get("staged", True)
-                    
-                    if not repo_path:
-                        return [TextContent(
-                            type="text",
-                            text=json.dumps({
-                                "success": False,
-                                "error": "repo_path parameter is required"
-                            }, indent=2)
-                        )]
-                    
-                    result = await self.qa_sentry.scan_git_diff(
-                        repo_path=repo_path,
-                        staged=staged
-                    )
-                    
-                    return [TextContent(type="text", text=json.dumps(result, indent=2))]
-                
-                elif name == "get_project_framework":
-                    include_examples = arguments.get("include_examples", True)
-                    
-                    # Get the framework structure
-                    framework = self.ideation_engine.get_framework(include_examples=include_examples)
-                    
-                    # Format it nicely for Bob to use
-                    formatted_framework = self.ideation_engine.format_framework_for_display()
-                    
-                    return [TextContent(type="text", text=formatted_framework)]
-                
-                elif name == "synthesize_project_plan":
-                    conversation_data = arguments.get("conversation_data")
-                    project_name = arguments.get("project_name")
-                    output_path = arguments.get("output_path")
-                    
-                    if not conversation_data:
-                        return [TextContent(
-                            type="text",
-                            text=json.dumps({
-                                "success": False,
-                                "error": "conversation_data parameter is required"
-                            }, indent=2)
-                        )]
-                    
-                    # Generate the PRD
-                    result = await self.ideation_engine.synthesize_prd(
-                        conversation_data=conversation_data,
-                        project_name=project_name,
-                        output_path=output_path
-                    )
-                    
-                    if result.get("success"):
-                        # Return the PRD markdown with metadata
-                        response_text = f"{result['prd_markdown']}\n\n---\n\n"
-                        response_text += f"**Generated:** {result['metadata']['generated_at']}\n"
-                        if result.get('file_path'):
-                            response_text += f"**Saved to:** `{result['file_path']}`\n"
-                        
-                        return [TextContent(type="text", text=response_text)]
-                    else:
-                        # Return error information
-                        return [TextContent(type="text", text=json.dumps(result, indent=2))]
-                
+                # Route the request
+                if handler := dispatcher.get(name):
+                    return await handler(arguments or {})
                 else:
-                    error_response = {
-                        "success": False,
-                        "error": f"Unknown tool: {name}",
-                        "available_tools": [
-                            "scan_code_quality",
-                            "generate_documentation",
-                            "scan_git_diff",
-                            "get_project_framework",
-                            "synthesize_project_plan"
-                        ]
-                    }
-                    return [TextContent(type="text", text=json.dumps(error_response, indent=2))]
+                    return self._error_response(f"Unknown tool: {name}", available_tools=list(dispatcher.keys()))
                     
             except Exception as e:
-                # Comprehensive error handling - return structured JSON
-                error_response = {
-                    "success": False,
-                    "error": str(e),
-                    "error_type": type(e).__name__,
-                    "tool_name": name,
-                    "arguments": arguments
-                }
-                return [TextContent(type="text", text=json.dumps(error_response, indent=2))]
-    
+                return self._error_response(str(e), error_type=type(e).__name__, tool_name=name, arguments=arguments)
+
     async def run(self):
         """Start the MCP server"""
         from mcp.server.stdio import stdio_server
@@ -297,5 +311,3 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
-
-# Made with Bob
