@@ -1,0 +1,41 @@
+"""
+Constants - Shared configuration values for BobSuite MCP
+"""
+
+# Supported programming languages and their extensions
+SUPPORTED_EXTENSIONS = {
+    '.py': 'Python',
+    '.js': 'JavaScript',
+    '.ts': 'TypeScript',
+    '.tsx': 'TypeScript',
+    '.jsx': 'JavaScript',
+    '.java': 'Java',
+    '.cpp': 'C++',
+    '.c': 'C',
+    '.h': 'C/C++ Header',
+    '.hpp': 'C++ Header',
+    '.go': 'Go',
+    '.rs': 'Rust',
+    '.rb': 'Ruby',
+    '.php': 'PHP',
+    '.cs': 'C#',
+    '.swift': 'Swift',
+    '.kt': 'Kotlin',
+    '.html': 'HTML',
+    '.css': 'CSS',
+    '.scss': 'SCSS',
+    '.sass': 'Sass',
+    '.less': 'Less',
+    '.json': 'JSON',
+    '.xml': 'XML',
+    '.yaml': 'YAML',
+    '.yml': 'YAML',
+    '.toml': 'TOML',
+    '.ini': 'INI',
+    '.md': 'Markdown',
+    '.txt': 'Text',
+    '.rst': 'reStructuredText',
+    '.sh': 'Shell',
+    '.bash': 'Bash',
+    '.sql': 'SQL',
+}

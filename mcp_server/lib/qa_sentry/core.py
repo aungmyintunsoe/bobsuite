@@ -1,0 +1,477 @@
+"""
+QA Sentry - Core Orchestrator
+Multi-Agent AI Scanner with Debate Pattern (Finder vs. Critic)
+
+This is the main entry point. It orchestrates:
+- File reading and language detection
+- Context chunking for large files (>500 lines)
+- Two-pass AI analysis (Finder → Critic)
+- Auto-fix delegation
+- Git diff delegation
+- Report generation
+"""
+
+import asyncio
+import json
+from pathlib import Path
+from typing import Dict, Any, List, Optional
+
+from lib.utils import detect_language, get_timestamp, read_file_safe, format_markdown_header
+from lib.qa_sentry.parsers import sanitize_json, validate_json_schema, FALLBACK_RESULT
+from lib.qa_sentry.auto_fixer import apply_auto_fixes
+from lib.qa_sentry.git_utils import scan_git_diff as _scan_git_diff
+
+
+class QASentry:
+    """Production-grade code quality analysis with multi-agent verification"""
+
+    def __init__(self, watsonx_client):
+        """
+        Initialize QA Sentry with enhanced capabilities.
+
+        Args:
+            watsonx_client: WatsonxClient instance for AI analysis
+        """
+        self.watsonx = watsonx_client
+        self.system_prompt = self._load_system_context()
+        self.temperature = 0.1  # Strict technical mode
+        self.max_tokens = 4000
+        self.chunk_size = 500  # Lines per chunk for large files
+
+    def _load_system_context(self) -> str:
+        """Load the comprehensive system prompt with few-shot examples"""
+        # Try loading from the reviewer.txt file first
+        try:
+            prompt_path = Path(__file__).parent / "reviewer.txt"
+            with open(prompt_path, 'r', encoding='utf-8') as f:
+                return f.read()
+        except Exception:
+            pass
+
+        # Fallback: try system_context.md in prompts/
+        try:
+            prompt_path = Path(__file__).parent.parent.parent / "prompts" / "system_context.md"
+            with open(prompt_path, 'r', encoding='utf-8') as f:
+                return f.read()
+        except Exception:
+            # Fallback to basic prompt
+            return """You are an elite code auditor. Analyze code for bugs, vulnerabilities, and quality issues.
+Return ONLY valid JSON with this schema:
+{
+  "summary": {"health_score": 0-100, "risk_level": "CRITICAL|HIGH|MEDIUM|LOW", "executive_summary": "string"},
+  "findings": [{"id": "string", "category": "string", "severity": "string", "line_numbers": [], "title": "string", "deep_dive": "string", "solution_explanation": "string", "reference": "string", "fix_code_snippet": "string"}]
+}"""
+
+    # ------------------------------------------------------------------ #
+    #                       AGENT PASSES                                  #
+    # ------------------------------------------------------------------ #
+
+    async def _finder_pass(
+        self,
+        code: str,
+        language: str,
+        file_path: str,
+        additional_context: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Pass 1: The Finder - Aggressive issue detection.
+
+        Returns raw JSON with all potential issues.
+        """
+        context_section = f"\n\nADDITIONAL CONTEXT:\n{additional_context}" if additional_context else ""
+
+        prompt = f"""{self.system_prompt}
+
+LANGUAGE: {language}
+FILE: {file_path}{context_section}
+
+CODE TO ANALYZE:
+```{language}
+{code}
+```
+
+OUTPUT: Return ONLY valid JSON matching the schema above. No markdown, no explanations.
+"""
+
+        try:
+            response = await self.watsonx.generate_text(
+                prompt,
+                temperature=self.temperature,
+                max_tokens=self.max_tokens
+            )
+
+            clean_json = sanitize_json(response)
+            data = json.loads(clean_json)
+
+            if not validate_json_schema(data):
+                raise ValueError("Response does not match expected schema")
+
+            return data
+        except json.JSONDecodeError as e:
+            return {
+                "summary": {
+                    "health_score": 50,
+                    "risk_level": "MEDIUM",
+                    "executive_summary": f"JSON parsing error in Finder pass: {str(e)}"
+                },
+                "findings": []
+            }
+        except Exception as e:
+            return {
+                "summary": {
+                    "health_score": 50,
+                    "risk_level": "MEDIUM",
+                    "executive_summary": f"Error in Finder pass: {str(e)}"
+                },
+                "findings": []
+            }
+
+    async def _critic_pass(
+        self,
+        code: str,
+        finder_results: Dict[str, Any],
+        language: str,
+        file_path: str
+    ) -> Dict[str, Any]:
+        """
+        Pass 2: The Critic - Verification and pruning of false positives.
+
+        Returns hardened, verified JSON.
+        """
+        prompt = f"""You are a Senior Staff Engineer conducting a final corporate code audit.
+
+LANGUAGE: {language}
+FILE: {file_path}
+
+ORIGINAL CODE:
+```{language}
+{code}
+```
+
+INITIAL FINDINGS FROM AUTOMATED SCAN:
+{json.dumps(finder_results, indent=2)}
+
+YOUR TASK:
+1. Review each finding for false positives
+2. Remove any issues that are:
+   - Style/formatting (assume linter handles this)
+   - Subjective preferences
+   - Not 95%+ confident bugs
+3. Recalculate health_score based on remaining issues
+4. Keep only HIGH-CONFIDENCE findings
+
+Return ONLY valid JSON matching this schema:
+{{
+  "summary": {{"health_score": 0-100, "risk_level": "CRITICAL|HIGH|MEDIUM|LOW", "executive_summary": "string"}},
+  "findings": [{{"id": "string", "category": "string", "severity": "string", "line_numbers": [], "title": "string", "deep_dive": "string", "solution_explanation": "string", "reference": "string", "fix_code_snippet": "string"}}]
+}}
+
+OUTPUT: Valid JSON only, no markdown, no explanations.
+"""
+
+        try:
+            response = await self.watsonx.generate_text(
+                prompt,
+                temperature=self.temperature,
+                max_tokens=self.max_tokens
+            )
+
+            clean_json = sanitize_json(response)
+            data = json.loads(clean_json)
+
+            if not validate_json_schema(data):
+                # If Critic fails validation, return Finder results
+                return finder_results
+
+            return data
+        except Exception:
+            # If Critic fails, return Finder results
+            return finder_results
+
+    # ------------------------------------------------------------------ #
+    #                       MAIN PIPELINE                                 #
+    # ------------------------------------------------------------------ #
+
+    async def scan_code(
+        self,
+        file_path: str,
+        scan_type: str = "all",
+        auto_fix: bool = False,
+        additional_context: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Production-grade code scanning with multi-agent debate pattern.
+
+        Args:
+            file_path: Path to the code file
+            scan_type: Type of scan (bugs, vulnerabilities, quality, all)
+            auto_fix: If True, automatically apply suggested fixes
+            additional_context: Optional cross-file context
+
+        Returns:
+            Dictionary containing comprehensive scan results
+        """
+        try:
+            # Read the file
+            code, error = read_file_safe(file_path)
+            if error or code is None:
+                return {
+                    "success": False,
+                    "error": error or "Failed to read file",
+                    "file_path": file_path
+                }
+
+            # Detect language
+            language = detect_language(file_path)
+            if not language or language == "Unknown":
+                language = "text"
+
+            # Check if chunking is needed
+            lines = code.split('\n')
+            if len(lines) > self.chunk_size:
+                result = await self._chunk_and_analyze(code, file_path, language, additional_context)
+            else:
+                # Standard two-pass analysis
+                finder_results = await self._finder_pass(code, language, file_path, additional_context)
+                final_results = await self._critic_pass(code, finder_results, language, file_path)
+
+                result = {
+                    "success": True,
+                    "file_path": file_path,
+                    "language": language,
+                    "scan_type": scan_type,
+                    "timestamp": get_timestamp(),
+                    "summary": final_results.get("summary", {}),
+                    "findings": final_results.get("findings", []),
+                    "lines_analyzed": len(lines)
+                }
+
+            # Apply auto-fix if requested
+            if auto_fix and result.get("success") and result.get("findings"):
+                fix_result = await apply_auto_fixes(file_path, result["findings"])
+                result["auto_fix_applied"] = fix_result
+
+            return result
+
+        except Exception as e:
+            return {
+                "success": False,
+                "error": f"Unexpected error during scan: {str(e)}",
+                "error_type": type(e).__name__,
+                "file_path": file_path
+            }
+
+    # ------------------------------------------------------------------ #
+    #                       CHUNKING                                      #
+    # ------------------------------------------------------------------ #
+
+    async def _chunk_and_analyze(
+        self,
+        code: str,
+        file_path: str,
+        language: str,
+        additional_context: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """Split large files into chunks and analyze concurrently."""
+        lines = code.split('\n')
+        chunks = []
+
+        for i in range(0, len(lines), self.chunk_size):
+            chunk_lines = lines[i:i + self.chunk_size]
+            chunk_code = '\n'.join(chunk_lines)
+            chunks.append({
+                'code': chunk_code,
+                'start_line': i + 1,
+                'end_line': min(i + self.chunk_size, len(lines))
+            })
+
+        # Analyze chunks concurrently
+        tasks = [
+            self._analyze_chunk(chunk, file_path, language, additional_context)
+            for chunk in chunks
+        ]
+
+        chunk_results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        # Merge results
+        all_findings = []
+        total_health_score = 0
+        valid_chunks = 0
+
+        for result in chunk_results:
+            if isinstance(result, dict) and 'findings' in result:
+                all_findings.extend(result['findings'])
+                total_health_score += result.get('summary', {}).get('health_score', 50)
+                valid_chunks += 1
+
+        avg_health_score = total_health_score // valid_chunks if valid_chunks > 0 else 50
+
+        if avg_health_score < 30:
+            risk_level = "CRITICAL"
+        elif avg_health_score < 50:
+            risk_level = "HIGH"
+        elif avg_health_score < 70:
+            risk_level = "MEDIUM"
+        else:
+            risk_level = "LOW"
+
+        return {
+            "success": True,
+            "file_path": file_path,
+            "language": language,
+            "timestamp": get_timestamp(),
+            "summary": {
+                "health_score": avg_health_score,
+                "risk_level": risk_level,
+                "executive_summary": f"Large file analyzed in {len(chunks)} chunks with {len(all_findings)} total findings"
+            },
+            "findings": all_findings,
+            "lines_analyzed": len(lines),
+            "chunks_processed": len(chunks)
+        }
+
+    async def _analyze_chunk(
+        self,
+        chunk: Dict[str, Any],
+        file_path: str,
+        language: str,
+        additional_context: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """Analyze a single chunk of code."""
+        try:
+            finder_results = await self._finder_pass(
+                chunk['code'],
+                language,
+                f"{file_path} (lines {chunk['start_line']}-{chunk['end_line']})",
+                additional_context
+            )
+
+            # Adjust line numbers to reflect actual file position
+            for finding in finder_results.get('findings', []):
+                finding['line_numbers'] = [
+                    ln + chunk['start_line'] - 1
+                    for ln in finding.get('line_numbers', [])
+                ]
+
+            return finder_results
+        except Exception as e:
+            return {
+                "summary": {
+                    "health_score": 50,
+                    "risk_level": "MEDIUM",
+                    "executive_summary": f"Error analyzing chunk: {str(e)}"
+                },
+                "findings": []
+            }
+
+    # ------------------------------------------------------------------ #
+    #                       CROSS-FILE CONTEXT                            #
+    # ------------------------------------------------------------------ #
+
+    async def _build_cross_file_context(self, file_paths: List[str]) -> str:
+        """Extract interfaces/signatures from related files for context."""
+        context_parts = []
+
+        for path in file_paths:
+            code, error = read_file_safe(path)
+            if code:
+                lines = code.split('\n')[:50]
+                signatures = '\n'.join(lines)
+                context_parts.append(f"# {path}\n{signatures}\n")
+
+        return "\n".join(context_parts)
+
+    # ------------------------------------------------------------------ #
+    #                       BATCH & GIT                                   #
+    # ------------------------------------------------------------------ #
+
+    async def batch_scan(
+        self,
+        file_paths: List[str],
+        scan_type: str = "all",
+        auto_fix: bool = False
+    ) -> List[Dict[str, Any]]:
+        """Scan multiple files with optional cross-file context awareness."""
+        additional_context = None
+        if len(file_paths) <= 5:
+            additional_context = await self._build_cross_file_context(file_paths)
+
+        results = []
+        for file_path in file_paths:
+            result = await self.scan_code(
+                file_path,
+                scan_type,
+                auto_fix=auto_fix,
+                additional_context=additional_context
+            )
+            results.append(result)
+
+        return results
+
+    async def scan_git_diff(
+        self,
+        repo_path: str,
+        staged: bool = True
+    ) -> List[Dict[str, Any]]:
+        """Scan only changed lines from git diff (delegates to git_utils)."""
+        return await _scan_git_diff(self, repo_path, staged)
+
+    # ------------------------------------------------------------------ #
+    #                       REPORTING                                     #
+    # ------------------------------------------------------------------ #
+
+    def generate_report(
+        self,
+        scan_results: List[Dict[str, Any]],
+        output_path: Optional[str] = None
+    ) -> str:
+        """Generate a markdown report from scan results."""
+        report_lines = [
+            format_markdown_header("Code Quality Analysis Report", {
+                "generated": get_timestamp(),
+                "total_files_scanned": len(scan_results)
+            })
+        ]
+
+        for result in scan_results:
+            if not result.get("success"):
+                report_lines.append(f"\n## {result.get('file_path', 'Unknown')}")
+                report_lines.append(f"\n**Error:** {result.get('error', 'Unknown error')}\n")
+                continue
+
+            summary = result.get("summary", {})
+            report_lines.append(f"\n## {result['file_path']}")
+            report_lines.append(f"\n**Language:** {result.get('language', 'Unknown')}")
+            report_lines.append(f"\n**Health Score:** {summary.get('health_score', 'N/A')}")
+            report_lines.append(f"\n**Risk Level:** {summary.get('risk_level', 'N/A')}")
+            report_lines.append(f"\n**Findings:** {len(result.get('findings', []))}")
+
+            for finding in result.get('findings', []):
+                report_lines.append(f"\n\n### [{finding.get('severity', '?')}] {finding.get('title', 'Untitled')}")
+                report_lines.append(f"\n**Lines:** {finding.get('line_numbers', [])}")
+                report_lines.append(f" | **ID:** {finding.get('id', '?')} | **Category:** {finding.get('category', '?')}")
+                
+                report_lines.append(f"\n\n#### The Problem")
+                report_lines.append(f"\n> {finding.get('deep_dive', 'N/A')}")
+                
+                report_lines.append(f"\n\n#### The Solution")
+                if finding.get('solution_explanation'):
+                    report_lines.append(f"\n{finding.get('solution_explanation')}")
+                
+                if finding.get('fix_code_snippet'):
+                    report_lines.append(f"\n\n```python\n{finding['fix_code_snippet']}\n```")
+                
+                report_lines.append(f"\n\n**Reference:** {finding.get('reference', 'N/A')}")
+
+            report_lines.append("\n\n---\n")
+
+        report = "\n".join(report_lines)
+
+        if output_path:
+            with open(output_path, 'w', encoding='utf-8') as f:
+                f.write(report)
+
+        return report
+
+
+# Made with Bob
