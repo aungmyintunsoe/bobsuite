@@ -1,0 +1,8 @@
+# Protect sensitive files from IBM Bob
+mcp_server/.env
+**/.env
+*.key
+*.pem
+secrets/
+
+# Made with Bob
