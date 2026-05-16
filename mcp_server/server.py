@@ -17,6 +17,7 @@ from mcp.types import Tool, TextContent
 from watsonx_client import WatsonxClient
 from lib.qa_sentry import QASentry
 from lib.doc_engine import DocEngine
+from lib.ideation import IdeationEngine
 
 
 class BobSuiteMCPServer:
@@ -27,6 +28,7 @@ class BobSuiteMCPServer:
         self.watsonx = WatsonxClient()
         self.qa_sentry = QASentry(self.watsonx)
         self.doc_engine = DocEngine(self.watsonx)
+        self.ideation_engine = IdeationEngine(self.watsonx)
         
         self._register_handlers()
     
@@ -100,6 +102,42 @@ class BobSuiteMCPServer:
                         "required": ["repo_path"]
                     }
                 ),
+                Tool(
+                    name="get_project_framework",
+                    description="Retrieve the 7-pillar ideation framework for structured feature planning. Use this to guide developers through creating comprehensive PRDs.",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "include_examples": {
+                                "type": "boolean",
+                                "description": "Include example answers for each pillar to guide the developer",
+                                "default": True
+                            }
+                        }
+                    }
+                ),
+                Tool(
+                    name="synthesize_project_plan",
+                    description="Generate a comprehensive Product Requirements Document (PRD) from conversation data. Call this after completing the ideation interview.",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "conversation_data": {
+                                "type": "object",
+                                "description": "Structured conversation data with pillar responses or full transcript"
+                            },
+                            "project_name": {
+                                "type": "string",
+                                "description": "Name of the project or feature being planned"
+                            },
+                            "output_path": {
+                                "type": "string",
+                                "description": "Optional custom path to save the PRD file. If not provided, AI will determine an appropriate location."
+                            }
+                        },
+                        "required": ["conversation_data"]
+                    }
+                ),
             ]
         
         @self.server.call_tool()
@@ -170,11 +208,61 @@ class BobSuiteMCPServer:
                     
                     return [TextContent(type="text", text=json.dumps(result, indent=2))]
                 
+                elif name == "get_project_framework":
+                    include_examples = arguments.get("include_examples", True)
+                    
+                    # Get the framework structure
+                    framework = self.ideation_engine.get_framework(include_examples=include_examples)
+                    
+                    # Format it nicely for Bob to use
+                    formatted_framework = self.ideation_engine.format_framework_for_display()
+                    
+                    return [TextContent(type="text", text=formatted_framework)]
+                
+                elif name == "synthesize_project_plan":
+                    conversation_data = arguments.get("conversation_data")
+                    project_name = arguments.get("project_name")
+                    output_path = arguments.get("output_path")
+                    
+                    if not conversation_data:
+                        return [TextContent(
+                            type="text",
+                            text=json.dumps({
+                                "success": False,
+                                "error": "conversation_data parameter is required"
+                            }, indent=2)
+                        )]
+                    
+                    # Generate the PRD
+                    result = await self.ideation_engine.synthesize_prd(
+                        conversation_data=conversation_data,
+                        project_name=project_name,
+                        output_path=output_path
+                    )
+                    
+                    if result.get("success"):
+                        # Return the PRD markdown with metadata
+                        response_text = f"{result['prd_markdown']}\n\n---\n\n"
+                        response_text += f"**Generated:** {result['metadata']['generated_at']}\n"
+                        if result.get('file_path'):
+                            response_text += f"**Saved to:** `{result['file_path']}`\n"
+                        
+                        return [TextContent(type="text", text=response_text)]
+                    else:
+                        # Return error information
+                        return [TextContent(type="text", text=json.dumps(result, indent=2))]
+                
                 else:
                     error_response = {
                         "success": False,
                         "error": f"Unknown tool: {name}",
-                        "available_tools": ["scan_code_quality", "generate_documentation", "scan_git_diff"]
+                        "available_tools": [
+                            "scan_code_quality",
+                            "generate_documentation",
+                            "scan_git_diff",
+                            "get_project_framework",
+                            "synthesize_project_plan"
+                        ]
                     }
                     return [TextContent(type="text", text=json.dumps(error_response, indent=2))]
                     

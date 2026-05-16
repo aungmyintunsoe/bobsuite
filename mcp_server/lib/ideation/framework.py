@@ -1,0 +1,166 @@
+"""
+Ideation Engine - Framework Definition
+Contains the 7-pillar framework structure and metadata
+"""
+
+from typing import Dict, Any
+
+
+def get_framework_definition() -> Dict[str, Any]:
+    """
+    Returns the complete 7-pillar ideation framework.
+    
+    This is the single source of truth for the framework structure.
+    """
+    return {
+        "pillars": [
+            {
+                "id": "description",
+                "title": "What are we building?",
+                "prompt": "Describe the core objective, target audience, and primary value of this feature.",
+                "guidance": "Think about: Who is this for? What problem does it solve? What's the main benefit?",
+                "examples": [
+                    "A task management app for remote teams to coordinate work asynchronously",
+                    "An AI-powered code review tool that catches bugs before deployment",
+                    "A real-time collaboration whiteboard for distributed design teams"
+                ],
+                "importance": "CRITICAL",
+                "min_length": 50
+            },
+            {
+                "id": "in_scope",
+                "title": "What are we including?",
+                "prompt": "Define the exact boundaries of the MVP (Minimum Viable Product). What features MUST be in version 1.0?",
+                "guidance": "Be specific and concrete. List actual features, not vague goals.",
+                "examples": [
+                    "User authentication (email/password)",
+                    "Task CRUD operations (create, read, update, delete)",
+                    "Basic project organization",
+                    "Due date tracking",
+                    "Simple notification system"
+                ],
+                "importance": "CRITICAL",
+                "min_length": 100
+            },
+            {
+                "id": "out_scope",
+                "title": "What are we excluding?",
+                "prompt": "State what will NOT be built in this iteration. This prevents feature creep.",
+                "guidance": "Be explicit about what's out of scope to manage expectations.",
+                "examples": [
+                    "Mobile native apps (web-only for MVP)",
+                    "Advanced analytics and reporting",
+                    "Third-party integrations (Slack, Jira, etc.)",
+                    "Real-time collaborative editing",
+                    "Custom themes and branding"
+                ],
+                "importance": "HIGH",
+                "min_length": 50
+            },
+            {
+                "id": "implementation",
+                "title": "How might we build it?",
+                "prompt": "Share initial thoughts on technical approach: APIs, libraries, database schemas, architecture patterns.",
+                "guidance": "Don't overthink this - just capture your initial technical instincts.",
+                "examples": [
+                    "Frontend: React with TypeScript, Tailwind CSS",
+                    "Backend: Node.js with Express, PostgreSQL database",
+                    "Authentication: JWT tokens with refresh mechanism",
+                    "API: RESTful design with versioning",
+                    "Deployment: Docker containers on AWS ECS"
+                ],
+                "importance": "MEDIUM",
+                "min_length": 80
+            },
+            {
+                "id": "acceptance",
+                "title": "How do we know it works?",
+                "prompt": "Define the exact conditions that must be met for this feature to be considered complete and testable.",
+                "guidance": "Make criteria measurable and specific. Avoid vague statements.",
+                "examples": [
+                    "Users can create a task in under 2 seconds",
+                    "All CRUD operations return responses in <200ms",
+                    "Authentication tokens expire after 24 hours",
+                    "95% of users can complete onboarding without help",
+                    "Zero critical bugs in production for 7 days"
+                ],
+                "importance": "CRITICAL",
+                "min_length": 80
+            },
+            {
+                "id": "timeline",
+                "title": "What's the timeline?",
+                "prompt": "Define the project timeline: milestones, phases, and target completion dates.",
+                "guidance": "Be realistic. Include buffer time for unknowns. Break into phases if needed.",
+                "examples": [
+                    "Phase 1 (Weeks 1-2): Core infrastructure and authentication",
+                    "Phase 2 (Weeks 3-4): Task management features",
+                    "Phase 3 (Weeks 5-6): Testing, polish, and deployment",
+                    "Target MVP: 6 weeks from kickoff",
+                    "Beta launch: Week 7, Full launch: Week 8"
+                ],
+                "importance": "CRITICAL",
+                "min_length": 60
+            },
+            {
+                "id": "resources",
+                "title": "What resources do we need?",
+                "prompt": "Identify the team, tools, budget, and other resources required for success.",
+                "guidance": "Think about: people, infrastructure, third-party services, budget constraints.",
+                "examples": [
+                    "Team: 2 full-stack developers, 1 designer, 1 QA engineer",
+                    "Infrastructure: AWS account with $500/month budget",
+                    "Tools: GitHub, Figma, Linear for project management",
+                    "Third-party: SendGrid for emails ($20/month)",
+                    "Time commitment: 40 hours/week per team member"
+                ],
+                "importance": "HIGH",
+                "min_length": 60
+            }
+        ],
+        "meta": {
+            "version": "2.0",
+            "pillar_count": 7,
+            "purpose": "Structured feature planning framework with timeline and resource planning",
+            "last_updated": "2026-05-16"
+        }
+    }
+
+
+def get_critical_pillars() -> list:
+    """Returns list of pillar IDs that are marked as CRITICAL"""
+    framework = get_framework_definition()
+    return [
+        pillar["id"] 
+        for pillar in framework["pillars"] 
+        if pillar["importance"] == "CRITICAL"
+    ]
+
+
+def get_pillar_by_id(pillar_id: str) -> Dict[str, Any]:
+    """
+    Get a specific pillar definition by ID.
+    
+    Args:
+        pillar_id: The pillar identifier (e.g., "description", "timeline")
+        
+    Returns:
+        Pillar definition dict or None if not found
+    """
+    framework = get_framework_definition()
+    for pillar in framework["pillars"]:
+        if pillar["id"] == pillar_id:
+            return pillar
+    return None
+
+
+def get_pillar_titles() -> Dict[str, str]:
+    """Returns a mapping of pillar IDs to their display titles"""
+    framework = get_framework_definition()
+    return {
+        pillar["id"]: pillar["title"]
+        for pillar in framework["pillars"]
+    }
+
+
+# Made with Bob

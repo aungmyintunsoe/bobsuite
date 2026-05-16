@@ -4,6 +4,8 @@
 
 This document explains what each file does, how they work together, and the overall architecture of the BobSuite MCP server.
 
+**Latest Update:** Added Ideation Engine - Feature Planning and PRD Generation (v2.0)
+
 ## 🗂️ File Structure & Responsibilities
 
 ### Core Files
@@ -13,10 +15,12 @@ This document explains what each file does, how they work together, and the over
 
 **What it does:**
 - Creates and manages the MCP server instance
-- Registers 3 tools that IBM Bob can use:
+- Registers 5 tools that IBM Bob can use:
   1. `scan_code_quality` - Analyzes code for bugs/vulnerabilities
   2. `generate_documentation` - Creates documentation
-  3. `read_dataset_file` - Reads files from dataset
+  3. `scan_git_diff` - Scans git changes
+  4. `get_project_framework` - Retrieves 7-pillar ideation framework
+  5. `synthesize_project_plan` - Generates comprehensive PRDs
 - Routes tool calls to appropriate modules
 - Handles async communication with IBM Bob via stdio
 
@@ -43,12 +47,11 @@ This document explains what each file does, how they work together, and the over
 
 **Key Methods:**
 - `__init__()` - Loads credentials from .env file
-- `_initialize_client()` - Sets up IBM watsonx.ai API client
 - `generate_text()` - Generic text generation with any prompt
-- `analyze_code()` - Specialized code analysis
-- `generate_documentation()` - Specialized documentation generation
-- `_build_analysis_prompt()` - Creates prompts for code analysis
-- `_build_documentation_prompt()` - Creates prompts for docs
+- `synthesize_prd()` - Specialized PRD generation from conversation data
+- `_build_ideation_prompt()` - Creates comprehensive prompts for PRD synthesis
+- `_format_structured_conversation()` - Formats structured pillar data
+- `_format_transcript_conversation()` - Formats raw conversation transcripts
 
 **Model Used:**
 - Default: `ibm/granite-4-h-small
@@ -138,6 +141,37 @@ Python, JavaScript, TypeScript, Java, C++, C, Go, Rust, Ruby, PHP, C#, Swift, Ko
 - `search_in_dataset()` - Search for text in files
 - `get_file_stats()` - Get file statistics
 - `create_file_index()` - Index files by extension
+#### `lib/ideation/core.py` - Ideation Engine
+**Purpose:** Transforms IBM Bob into a proactive Technical Product Manager for feature planning
+
+**What it does:**
+- Provides a structured 7-pillar framework for feature planning:
+  1. **Description** - What are we building?
+  2. **In Scope** - What features are included?
+  3. **Out of Scope** - What's explicitly excluded?
+  4. **Implementation** - Technical approach and architecture
+  5. **Acceptance Criteria** - How do we know it works?
+  6. **Timeline** - Project phases and milestones
+  7. **Resources** - Team, tools, and budget requirements
+- Validates conversation data before PRD synthesis
+- Orchestrates PRD generation using watsonx.ai
+- Determines intelligent output paths for saving PRDs
+- Formats framework for display in Bob's chat interface
+
+**Key Methods:**
+- `get_framework()` - Returns the 7-pillar structure
+- `synthesize_prd()` - Main PRD generation orchestrator
+- `_validate_input()` - Validates conversation completeness
+- `_determine_output_path()` - AI-driven or user-specified file paths
+- `_save_prd()` - Saves PRD to markdown file
+- `format_framework_for_display()` - Creates readable framework guide
+
+**Framework Philosophy:**
+- AI-driven conversation flow (Bob decides when to ask follow-ups)
+- Flexible data format (structured JSON or raw transcript)
+- Dual output mode (chat display + file save)
+- Quality validation (ensures critical pillars are answered)
+
 
 **Supported File Types:**
 Source code, markup, config files, documentation (30+ extensions)
@@ -172,6 +206,7 @@ python test_watsonx.py
 
 ## 🔄 Data Flow
 
+### Code Quality & Documentation Flow
 ```
 IBM Bob IDE
     ↓
@@ -189,6 +224,42 @@ Routes to appropriate module:
     IBM watsonx.ai API
          ↓
     Returns results to IBM Bob
+```
+
+### Ideation Engine Flow (NEW)
+```
+Developer: "I want to plan a new feature"
+    ↓
+Bob calls get_project_framework
+    ↓
+IdeationEngine returns 7-pillar structure
+    ↓
+Bob conducts guided interview:
+    - Asks pillar questions sequentially
+    - AI decides when to ask follow-ups
+    - Validates responses for completeness
+    ↓
+Developer completes all 7 pillars
+    ↓
+Bob calls synthesize_project_plan
+    ↓
+IdeationEngine validates conversation data
+    ↓
+watsonx_client.synthesize_prd()
+    - Loads sample-prd.md as reference
+    - Builds comprehensive synthesis prompt
+    - Calls IBM Granite model
+    ↓
+AI generates professional PRD markdown
+    ↓
+IdeationEngine determines output path:
+    - User-specified path (if provided)
+    - AI-generated path based on project name
+    - Default: ideation/{project}-prd-{timestamp}.md
+    ↓
+Save PRD to file + Return in chat
+    ↓
+Developer reviews PRD and starts coding
 ```
 
 ## 🤖 Model Information
@@ -306,6 +377,97 @@ Bob, use scan_code_quality to analyze dataset_balancia/example.py
 ## 📝 Summary
 
 **Each file has a clear purpose:**
+
+---
+
+## 🧠 Ideation Engine - Feature Planning
+
+### Overview
+The Ideation Engine transforms IBM Bob from a reactive code-scanning tool into a proactive Technical Product Manager. It shifts AI integration to the very beginning of the SDLC—the planning phase.
+
+### The 7-Pillar Framework
+
+| Pillar | Question | Purpose | Importance |
+|--------|----------|---------|------------|
+| 1. Description | What are we building? | Define core objective, audience, and value | CRITICAL |
+| 2. In Scope | What are we including? | Set MVP boundaries | CRITICAL |
+| 3. Out of Scope | What are we excluding? | Prevent feature creep | HIGH |
+| 4. Implementation | How might we build it? | Capture technical approach | MEDIUM |
+| 5. Acceptance | How do we know it works? | Define success criteria | CRITICAL |
+| 6. Timeline | What's the timeline? | Plan phases and milestones | CRITICAL |
+| 7. Resources | What resources do we need? | Identify team, tools, budget | HIGH |
+
+### Key Features
+
+**AI-Driven Conversation**
+- Bob manages the conversation flow dynamically
+- Asks follow-up questions based on context
+- Critiques responses to ensure quality
+- No hardcoded validation rules
+
+**Flexible Data Format**
+- Accepts structured JSON (pillar-based)
+- Accepts raw conversation transcripts
+- Auto-detects format and adapts processing
+
+**Intelligent Output**
+- AI determines appropriate file path
+- User can specify custom path
+- Default: `ideation/{project-name}-prd-{timestamp}.md`
+- Returns markdown in chat + saves to file
+
+**Quality Validation**
+- Ensures critical pillars are answered
+- Checks minimum response lengths
+- Validates completeness before synthesis
+- Provides helpful error messages
+
+### Usage Example
+
+```python
+# In IBM Bob chat:
+Developer: "I want to plan a new feature"
+
+Bob: "Great! Let's use the ideation framework. What are we building?"
+
+Developer: "A real-time collaborative whiteboard for design teams"
+
+Bob: "Interesting! Who is the target audience?"
+# ... Bob continues through all 7 pillars with follow-ups
+
+Bob: "Perfect! Let me synthesize this into a PRD..."
+# Bob calls synthesize_project_plan internally
+
+Bob: [Returns formatted PRD in chat]
+"✅ PRD saved to: ideation/collaborative-whiteboard-prd-20260516.md"
+```
+
+### Testing
+
+Run the comprehensive test suite:
+```bash
+cd mcp_server
+python test_ideation.py
+```
+
+Tests include:
+- Framework retrieval and structure validation
+- Input validation (empty, incomplete, short responses)
+- Output path determination logic
+- PRD synthesis with structured data
+- File saving functionality
+- Display formatting
+
+### Files
+
+```
+mcp_server/lib/ideation/
+├── __init__.py              # Module exports
+├── core.py                  # IdeationEngine class (428 lines)
+├── sample-prd.md           # Reference template for AI
+└── {generated-prds}.md     # Output files
+```
+
 1. **server.py** - MCP protocol handler (the interface)
 2. **watsonx_client.py** - AI communication (the brain)
 3. **qa_sentry.py** - Code analysis (the inspector)
