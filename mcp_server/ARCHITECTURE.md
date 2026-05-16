@@ -468,11 +468,100 @@ mcp_server/lib/ideation/
 └── {generated-prds}.md     # Output files
 ```
 
+---
+
+## 🎨 Visualizer Engine - Project Onboarding
+
+### Overview
+The Visualizer Engine transforms complex codebases into visual diagrams, making it easy for new contributors to understand project structure, dependencies, and architecture at a glance.
+
+### What it does:
+- Analyzes project structure and generates three types of visualizations:
+  1. **Dependency Chain** - Module relationships and imports
+  2. **Feature Flow Maps** - User journeys and data flows
+  3. **Project Concept Maps** - High-level architecture overview
+- Outputs beautiful Mermaid diagrams embedded in markdown
+- Uses AI to understand architecture and feature flows
+- Perfect for onboarding, documentation, and code reviews
+
+### Key Components:
+
+**Dependency Chain Analyzer**
+- Parses Python import statements using AST
+- Builds module dependency graph
+- Distinguishes internal vs external dependencies
+- Generates Mermaid flowchart diagrams
+- No AI required - fast and deterministic
+
+**Feature Flow Mapper**
+- Uses AI to analyze codebase and identify features
+- Traces user journeys through the system
+- Maps data flow between components
+- Generates Mermaid sequence diagrams
+- AI-powered for intelligent feature detection
+
+**Project Concept Visualizer**
+- Uses AI to understand high-level architecture
+- Identifies main components (Server, Database, API, UI, etc.)
+- Maps component relationships
+- Detects external service integrations
+- Generates Mermaid architecture diagrams
+
+### Files
+
+```
+mcp_server/lib/visualizer/
+├── __init__.py              # Module exports
+├── core.py                  # VisualizerEngine class (783 lines)
+├── USAGE_GUIDE.md          # Comprehensive usage documentation
+└── {generated-diagrams}.md # Output visualization files
+```
+
+### Usage Example
+
+```python
+# In IBM Bob chat:
+Developer: "Generate a dependency chain for the mcp_server directory"
+
+Bob: [Analyzes imports and creates diagram]
+"✅ Dependency chain generated!
+- Total modules: 15
+- Total dependencies: 42
+- External deps: 8
+
+[Displays Mermaid diagram showing module relationships]
+
+✅ Saved to: visualizations/dependency-chain-2026-05-16.md"
+```
+
+### Testing
+
+Run the comprehensive test suite:
+```bash
+cd mcp_server
+python test_visualizer.py
+```
+
+Tests include:
+- Dependency chain generation and validation
+- Feature flow mapping with AI
+- Project concept visualization
+- Error handling with invalid inputs
+- File saving functionality
+- Mermaid diagram syntax validation
+
+---
+
+## 📝 Summary
+
+**Each file has a clear purpose:**
+
 1. **server.py** - MCP protocol handler (the interface)
 2. **watsonx_client.py** - AI communication (the brain)
 3. **qa_sentry.py** - Code analysis (the inspector)
 4. **doc_engine.py** - Documentation (the writer)
-5. **file_manager.py** - File operations (the librarian)
+5. **ideation_engine.py** - Feature planning (the product manager)
+6. **visualizer.py** - Project visualization (the cartographer) 🆕
 
 **They work together like this:**
 Bob → Server → Module → Watsonx Client → IBM AI → Results → Bob
