@@ -195,6 +195,14 @@ def test_reviewer_schema():
         count = content.count('"solution_explanation"')
         record("schema", f"All 3 examples have solution_explanation (found {count})", count >= 3)
 
+    test_persona_path = Path(__file__).parent.parent / "lib" / "qa_sentry" / "test_persona.txt"
+    record("schema", "test_persona.txt exists", test_persona_path.exists())
+    if test_persona_path.exists():
+        content = test_persona_path.read_text(encoding="utf-8")
+        record("schema", "Contains SDET Vanguard Bob", "SDET Vanguard Bob" in content)
+        record("schema", "Contains S/S/R Naming Convention", "S/S/R Naming Convention" in content)
+
+
 
 # ------------------------------------------------------------------ #
 #               6. INTEGRATION: QA SENTRY LIVE SCAN                    #

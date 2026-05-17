@@ -102,7 +102,8 @@ def build_network_performance_test_prompt(
     language: str,
     file_path: str,
     testing_library: Optional[str] = None,
-    test_requirements: Optional[str] = None
+    test_requirements: Optional[str] = None,
+    testing_persona: Optional[str] = None
 ) -> str:
     """
     Build prompt for autonomous network performance testing.
@@ -127,7 +128,8 @@ def build_network_performance_test_prompt(
     if test_requirements:
         requirements_section = f"\n\nSPECIFIC TEST REQUIREMENTS:\n{test_requirements}"
     
-    prompt = f"""# MISSION DIRECTIVE
+    # Use the loaded persona from test_persona.txt if provided, otherwise fallback to inline
+    persona_block = testing_persona if testing_persona else """# MISSION DIRECTIVE
 You are "SDET Vanguard Bob" — an elite Software Development Engineer in Test and Autonomous QA Executioner specializing in NETWORK PERFORMANCE TESTING.
 
 # AUTONOMOUS EXECUTION PROTOCOLS
@@ -135,7 +137,9 @@ You possess the capability to act as an autonomous agent:
 1. **Environment Mastery:** Proactively search for the exact, up-to-date syntax, libraries, and frameworks required.
 2. **Dependency Management:** Automatically determine and formulate commands to install necessary dependencies.
 3. **Tool Agnosticism:** Expert in tools like Jest, Supertest, Postman/Newman, Pytest with responses/httpx, Artillery, k6, Locust, etc.
-4. **Execution Directives:** Provide exact terminal commands to initialize environment, install dependencies, and execute tests.
+4. **Execution Directives:** Provide exact terminal commands to initialize environment, install dependencies, and execute tests."""
+
+    prompt = f"""{persona_block}
 
 # YOUR TASK: NETWORK PERFORMANCE TESTING
 Analyze the following code and create comprehensive network performance tests that verify:
@@ -197,7 +201,8 @@ def build_unit_test_generation_prompt(
     language: str,
     file_path: str,
     testing_library: Optional[str] = None,
-    test_requirements: Optional[str] = None
+    test_requirements: Optional[str] = None,
+    testing_persona: Optional[str] = None
 ) -> str:
     """
     Build prompt for autonomous unit test generation following Steve Sanderson principles.
@@ -222,7 +227,8 @@ def build_unit_test_generation_prompt(
     if test_requirements:
         requirements_section = f"\n\nSPECIFIC TEST REQUIREMENTS:\n{test_requirements}"
     
-    prompt = f"""# MISSION DIRECTIVE
+    # Use the loaded persona from test_persona.txt if provided, otherwise fallback to inline
+    persona_block = testing_persona if testing_persona else """# MISSION DIRECTIVE
 You are "SDET Vanguard Bob" — an elite Software Development Engineer in Test and Autonomous QA Executioner specializing in UNIT TEST GENERATION.
 
 # THE UNIT TESTING MANIFESTO (Steve Sanderson Principles)
@@ -257,7 +263,9 @@ Name every test using Subject_Scenario_Result format.
 1. **Environment Mastery:** Research exact, up-to-date syntax and libraries required.
 2. **Dependency Management:** Determine and formulate dependency install commands.
 3. **Tool Agnosticism:** Expert in Jest, Mocha, Pytest, JUnit, NUnit, xUnit, etc.
-4. **Execution Directives:** Provide exact commands to run tests.
+4. **Execution Directives:** Provide exact commands to run tests."""
+
+    prompt = f"""{persona_block}
 
 LANGUAGE: {language}
 FILE: {file_path}{library_guidance}{requirements_section}

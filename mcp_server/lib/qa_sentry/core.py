@@ -8,6 +8,7 @@ This is the main entry point. It orchestrates:
 - Two-pass AI analysis (Finder → Critic)
 - Auto-fix delegation
 - Git diff delegation
+- Dynamic test generation (unit, network, integration, e2e, etc.)
 - Report generation
 
 OPTIMIZATIONS:
@@ -15,24 +16,30 @@ OPTIMIZATIONS:
 - File hash-based caching (skip unchanged files)
 - Concurrent batch scanning with asyncio.gather()
 - Extracted prompts for easier maintenance
+
+ARCHITECTURE (refactored):
+- agents.py      → Finder/Critic debate passes
+- chunking.py    → Large file splitting + concurrent analysis
+- test_generator → Dynamic test generation (loads test_persona.txt)
+- reporting.py   → Markdown report generation
+- prompts.py     → Centralized prompt templates
+- parsers.py     → JSON sanitization + schema validation
+- auto_fixer.py  → Code fix application
+- git_utils.py   → Git diff scanning
 """
 
 import asyncio
-import json
 from pathlib import Path
 from typing import Dict, Any, List, Optional
 
-from lib.utils import detect_language, get_timestamp, read_file_safe, format_markdown_header
+from lib.utils import detect_language, get_timestamp, read_file_safe
 from lib.utils.cache import get_cache
-from lib.qa_sentry.parsers import sanitize_json, validate_json_schema, FALLBACK_RESULT
+from lib.qa_sentry.agents import finder_pass, critic_pass
+from lib.qa_sentry.chunking import chunk_and_analyze, build_cross_file_context
 from lib.qa_sentry.auto_fixer import apply_auto_fixes
 from lib.qa_sentry.git_utils import scan_git_diff as _scan_git_diff
-from lib.qa_sentry.prompts import (
-    build_finder_prompt,
-    build_critic_prompt,
-    build_network_performance_test_prompt,
-    build_unit_test_generation_prompt
-)
+from lib.qa_sentry.test_generator import generate_tests
+from lib.qa_sentry.reporting import generate_report as _generate_report
 
 
 class QASentry:
@@ -77,101 +84,6 @@ Return ONLY valid JSON with this schema:
   "summary": {"health_score": 0-100, "risk_level": "CRITICAL|HIGH|MEDIUM|LOW", "executive_summary": "string"},
   "findings": [{"id": "string", "category": "string", "severity": "string", "line_numbers": [], "title": "string", "deep_dive": "string", "solution_explanation": "string", "reference": "string", "fix_code_snippet": "string"}]
 }"""
-
-    # ------------------------------------------------------------------ #
-    #                       AGENT PASSES                                  #
-    # ------------------------------------------------------------------ #
-
-    async def _finder_pass(
-        self,
-        code: str,
-        language: str,
-        file_path: str,
-        additional_context: Optional[str] = None
-    ) -> Dict[str, Any]:
-        """
-        Pass 1: The Finder - Aggressive issue detection.
-
-        Returns raw JSON with all potential issues.
-        """
-        prompt = build_finder_prompt(
-            code=code,
-            language=language,
-            file_path=file_path,
-            system_context=self.system_prompt,
-            additional_context=additional_context
-        )
-
-        try:
-            response = await self.watsonx.generate_text(
-                prompt,
-                temperature=self.temperature,
-                max_tokens=self.max_tokens
-            )
-
-            clean_json = sanitize_json(response)
-            data = json.loads(clean_json)
-
-            if not validate_json_schema(data):
-                raise ValueError("Response does not match expected schema")
-
-            return data
-        except json.JSONDecodeError as e:
-            return {
-                "summary": {
-                    "health_score": 50,
-                    "risk_level": "MEDIUM",
-                    "executive_summary": f"JSON parsing error in Finder pass: {str(e)}"
-                },
-                "findings": []
-            }
-        except Exception as e:
-            return {
-                "summary": {
-                    "health_score": 50,
-                    "risk_level": "MEDIUM",
-                    "executive_summary": f"Error in Finder pass: {str(e)}"
-                },
-                "findings": []
-            }
-
-    async def _critic_pass(
-        self,
-        code: str,
-        finder_results: Dict[str, Any],
-        language: str,
-        file_path: str
-    ) -> Dict[str, Any]:
-        """
-        Pass 2: The Critic - Verification and pruning of false positives.
-
-        Returns hardened, verified JSON.
-        """
-        prompt = build_critic_prompt(
-            code=code,
-            finder_results=finder_results,
-            language=language,
-            file_path=file_path
-        )
-
-        try:
-            response = await self.watsonx.generate_text(
-                prompt,
-                temperature=self.temperature,
-                max_tokens=self.max_tokens
-            )
-
-            clean_json = sanitize_json(response)
-            data = json.loads(clean_json)
-
-            if not validate_json_schema(data):
-                # If Critic fails validation, return Finder results
-                return finder_results
-
-            return data
-        except Exception:
-            # If Critic fails, return Finder results
-            return finder_results
 
     # ------------------------------------------------------------------ #
     #                       MAIN PIPELINE                                 #
@@ -223,11 +135,23 @@ Return ONLY valid JSON with this schema:
             # Check if chunking is needed
             lines = code.split('\n')
             if len(lines) > self.chunk_size:
-                result = await self._chunk_and_analyze(code, file_path, language, additional_context)
+                result = await chunk_and_analyze(
+                    self.watsonx, code, file_path, language,
+                    self.system_prompt, self.chunk_size,
+                    self.temperature, self.max_tokens,
+                    additional_context
+                )
             else:
                 # Standard two-pass analysis
-                finder_results = await self._finder_pass(code, language, file_path, additional_context)
-                final_results = await self._critic_pass(code, finder_results, language, file_path)
+                finder_results = await finder_pass(
+                    self.watsonx, code, language, file_path,
+                    self.system_prompt, self.temperature, self.max_tokens,
+                    additional_context
+                )
+                final_results = await critic_pass(
+                    self.watsonx, code, finder_results, language, file_path,
+                    self.temperature, self.max_tokens
+                )
 
                 result = {
                     "success": True,
@@ -260,126 +184,6 @@ Return ONLY valid JSON with this schema:
             }
 
     # ------------------------------------------------------------------ #
-    #                       CHUNKING                                      #
-    # ------------------------------------------------------------------ #
-
-    async def _chunk_and_analyze(
-        self,
-        code: str,
-        file_path: str,
-        language: str,
-        additional_context: Optional[str] = None
-    ) -> Dict[str, Any]:
-        """Split large files into chunks and analyze concurrently."""
-        lines = code.split('\n')
-        chunks = []
-
-        for i in range(0, len(lines), self.chunk_size):
-            chunk_lines = lines[i:i + self.chunk_size]
-            chunk_code = '\n'.join(chunk_lines)
-            chunks.append({
-                'code': chunk_code,
-                'start_line': i + 1,
-                'end_line': min(i + self.chunk_size, len(lines))
-            })
-
-        # Analyze chunks concurrently
-        tasks = [
-            self._analyze_chunk(chunk, file_path, language, additional_context)
-            for chunk in chunks
-        ]
-
-        chunk_results = await asyncio.gather(*tasks, return_exceptions=True)
-
-        # Merge results
-        all_findings = []
-        total_health_score = 0
-        valid_chunks = 0
-
-        for result in chunk_results:
-            if isinstance(result, dict) and 'findings' in result:
-                all_findings.extend(result['findings'])
-                total_health_score += result.get('summary', {}).get('health_score', 50)
-                valid_chunks += 1
-
-        avg_health_score = total_health_score // valid_chunks if valid_chunks > 0 else 50
-
-        if avg_health_score < 30:
-            risk_level = "CRITICAL"
-        elif avg_health_score < 50:
-            risk_level = "HIGH"
-        elif avg_health_score < 70:
-            risk_level = "MEDIUM"
-        else:
-            risk_level = "LOW"
-
-        return {
-            "success": True,
-            "file_path": file_path,
-            "language": language,
-            "timestamp": get_timestamp(),
-            "summary": {
-                "health_score": avg_health_score,
-                "risk_level": risk_level,
-                "executive_summary": f"Large file analyzed in {len(chunks)} chunks with {len(all_findings)} total findings"
-            },
-            "findings": all_findings,
-            "lines_analyzed": len(lines),
-            "chunks_processed": len(chunks)
-        }
-
-    async def _analyze_chunk(
-        self,
-        chunk: Dict[str, Any],
-        file_path: str,
-        language: str,
-        additional_context: Optional[str] = None
-    ) -> Dict[str, Any]:
-        """Analyze a single chunk of code."""
-        try:
-            finder_results = await self._finder_pass(
-                chunk['code'],
-                language,
-                f"{file_path} (lines {chunk['start_line']}-{chunk['end_line']})",
-                additional_context
-            )
-
-            # Adjust line numbers to reflect actual file position
-            for finding in finder_results.get('findings', []):
-                finding['line_numbers'] = [
-                    ln + chunk['start_line'] - 1
-                    for ln in finding.get('line_numbers', [])
-                ]
-
-            return finder_results
-        except Exception as e:
-            return {
-                "summary": {
-                    "health_score": 50,
-                    "risk_level": "MEDIUM",
-                    "executive_summary": f"Error analyzing chunk: {str(e)}"
-                },
-                "findings": []
-            }
-
-    # ------------------------------------------------------------------ #
-    #                       CROSS-FILE CONTEXT                            #
-    # ------------------------------------------------------------------ #
-
-    async def _build_cross_file_context(self, file_paths: List[str]) -> str:
-        """Extract interfaces/signatures from related files for context."""
-        context_parts = []
-
-        for path in file_paths:
-            code, error = read_file_safe(path)
-            if code:
-                lines = code.split('\n')[:50]
-                signatures = '\n'.join(lines)
-                context_parts.append(f"# {path}\n{signatures}\n")
-
-        return "\n".join(context_parts)
-
-    # ------------------------------------------------------------------ #
     #                       BATCH & GIT                                   #
     # ------------------------------------------------------------------ #
 
@@ -396,7 +200,7 @@ Return ONLY valid JSON with this schema:
         """
         additional_context = None
         if len(file_paths) <= 5:
-            additional_context = await self._build_cross_file_context(file_paths)
+            additional_context = await build_cross_file_context(file_paths)
 
         # Scan all files concurrently
         results = await asyncio.gather(*[
@@ -433,7 +237,7 @@ Return ONLY valid JSON with this schema:
         return await _scan_git_diff(self, repo_path, staged)
 
     # ------------------------------------------------------------------ #
-    #                       TESTING FEATURES                              #
+    #                       TEST GENERATION                               #
     # ------------------------------------------------------------------ #
 
     async def generate_network_performance_tests(
@@ -443,85 +247,16 @@ Return ONLY valid JSON with this schema:
         test_requirements: Optional[str] = None
     ) -> Dict[str, Any]:
         """
-        Generate comprehensive network performance tests for API endpoints and network calls.
-        
-        Args:
-            file_path: Path to the code file containing network/API code
-            testing_library: Optional specific testing library (e.g., 'jest', 'postman', 'pytest')
-            test_requirements: Optional specific requirements for the tests
-        
-        Returns:
-            Dictionary containing test files, setup commands, and execution instructions
+        Generate comprehensive network performance tests.
+        Delegates to the unified test generator with test_type='network'.
         """
-        try:
-            # Read the file
-            code, error = read_file_safe(file_path)
-            if error or code is None:
-                return {
-                    "success": False,
-                    "error": error or "Failed to read file",
-                    "file_path": file_path
-                }
-
-            # Detect language
-            language = detect_language(file_path)
-            if not language or language == "Unknown":
-                language = "text"
-
-            # Build the prompt
-            prompt = build_network_performance_test_prompt(
-                code=code,
-                language=language,
-                file_path=file_path,
-                testing_library=testing_library,
-                test_requirements=test_requirements
-            )
-
-            # Generate tests using watsonx
-            response = await self.watsonx.generate_text(
-                prompt,
-                temperature=0.2,  # Slightly higher for creative test generation
-                max_tokens=6000   # More tokens for comprehensive test suites
-            )
-
-            # Parse the JSON response
-            clean_json = sanitize_json(response)
-            test_data = json.loads(clean_json)
-
-            # Add metadata
-            result = {
-                "success": True,
-                "file_path": file_path,
-                "language": language,
-                "timestamp": get_timestamp(),
-                "test_type": "network_performance",
-                "test_framework": test_data.get("test_framework"),
-                "framework_justification": test_data.get("framework_justification"),
-                "dependencies": test_data.get("dependencies", []),
-                "setup_commands": test_data.get("setup_commands", []),
-                "test_files": test_data.get("test_files", []),
-                "execution_command": test_data.get("execution_command"),
-                "configuration_files": test_data.get("configuration_files", []),
-                "performance_thresholds": test_data.get("performance_thresholds", {}),
-                "test_scenarios": test_data.get("test_scenarios", []),
-                "notes": test_data.get("notes", "")
-            }
-
-            return result
-
-        except json.JSONDecodeError as e:
-            return {
-                "success": False,
-                "error": f"JSON parsing error: {str(e)}",
-                "file_path": file_path
-            }
-        except Exception as e:
-            return {
-                "success": False,
-                "error": f"Unexpected error: {str(e)}",
-                "error_type": type(e).__name__,
-                "file_path": file_path
-            }
+        return await generate_tests(
+            self.watsonx,
+            file_path,
+            test_type="network",
+            testing_library=testing_library,
+            test_requirements=test_requirements
+        )
 
     async def generate_unit_tests(
         self,
@@ -531,85 +266,15 @@ Return ONLY valid JSON with this schema:
     ) -> Dict[str, Any]:
         """
         Generate comprehensive unit tests following Steve Sanderson principles.
-        
-        Args:
-            file_path: Path to the code file to generate unit tests for
-            testing_library: Optional specific testing library (e.g., 'jest', 'pytest', 'junit')
-            test_requirements: Optional specific requirements for the tests
-        
-        Returns:
-            Dictionary containing test files, setup commands, and execution instructions
+        Delegates to the unified test generator with test_type='unit'.
         """
-        try:
-            # Read the file
-            code, error = read_file_safe(file_path)
-            if error or code is None:
-                return {
-                    "success": False,
-                    "error": error or "Failed to read file",
-                    "file_path": file_path
-                }
-
-            # Detect language
-            language = detect_language(file_path)
-            if not language or language == "Unknown":
-                language = "text"
-
-            # Build the prompt
-            prompt = build_unit_test_generation_prompt(
-                code=code,
-                language=language,
-                file_path=file_path,
-                testing_library=testing_library,
-                test_requirements=test_requirements
-            )
-
-            # Generate tests using watsonx
-            response = await self.watsonx.generate_text(
-                prompt,
-                temperature=0.2,  # Slightly higher for creative test generation
-                max_tokens=6000   # More tokens for comprehensive test suites
-            )
-
-            # Parse the JSON response
-            clean_json = sanitize_json(response)
-            test_data = json.loads(clean_json)
-
-            # Add metadata
-            result = {
-                "success": True,
-                "file_path": file_path,
-                "language": language,
-                "timestamp": get_timestamp(),
-                "test_type": "unit_tests",
-                "test_framework": test_data.get("test_framework"),
-                "framework_justification": test_data.get("framework_justification"),
-                "dependencies": test_data.get("dependencies", []),
-                "setup_commands": test_data.get("setup_commands", []),
-                "test_files": test_data.get("test_files", []),
-                "execution_command": test_data.get("execution_command"),
-                "configuration_files": test_data.get("configuration_files", []),
-                "mock_strategy": test_data.get("mock_strategy", {}),
-                "test_coverage": test_data.get("test_coverage", {}),
-                "design_principles_applied": test_data.get("design_principles_applied", []),
-                "notes": test_data.get("notes", "")
-            }
-
-            return result
-
-        except json.JSONDecodeError as e:
-            return {
-                "success": False,
-                "error": f"JSON parsing error: {str(e)}",
-                "file_path": file_path
-            }
-        except Exception as e:
-            return {
-                "success": False,
-                "error": f"Unexpected error: {str(e)}",
-                "error_type": type(e).__name__,
-                "file_path": file_path
-            }
+        return await generate_tests(
+            self.watsonx,
+            file_path,
+            test_type="unit",
+            testing_library=testing_library,
+            test_requirements=test_requirements
+        )
 
     # ------------------------------------------------------------------ #
     #                       REPORTING                                     #
@@ -621,52 +286,7 @@ Return ONLY valid JSON with this schema:
         output_path: Optional[str] = None
     ) -> str:
         """Generate a markdown report from scan results."""
-        report_lines = [
-            format_markdown_header("Code Quality Analysis Report", {
-                "generated": get_timestamp(),
-                "total_files_scanned": len(scan_results)
-            })
-        ]
-
-        for result in scan_results:
-            if not result.get("success"):
-                report_lines.append(f"\n## {result.get('file_path', 'Unknown')}")
-                report_lines.append(f"\n**Error:** {result.get('error', 'Unknown error')}\n")
-                continue
-
-            summary = result.get("summary", {})
-            report_lines.append(f"\n## {result['file_path']}")
-            report_lines.append(f"\n**Language:** {result.get('language', 'Unknown')}")
-            report_lines.append(f"\n**Health Score:** {summary.get('health_score', 'N/A')}")
-            report_lines.append(f"\n**Risk Level:** {summary.get('risk_level', 'N/A')}")
-            report_lines.append(f"\n**Findings:** {len(result.get('findings', []))}")
-
-            for finding in result.get('findings', []):
-                report_lines.append(f"\n\n### [{finding.get('severity', '?')}] {finding.get('title', 'Untitled')}")
-                report_lines.append(f"\n**Lines:** {finding.get('line_numbers', [])}")
-                report_lines.append(f" | **ID:** {finding.get('id', '?')} | **Category:** {finding.get('category', '?')}")
-                
-                report_lines.append(f"\n\n#### The Problem")
-                report_lines.append(f"\n> {finding.get('deep_dive', 'N/A')}")
-                
-                report_lines.append(f"\n\n#### The Solution")
-                if finding.get('solution_explanation'):
-                    report_lines.append(f"\n{finding.get('solution_explanation')}")
-                
-                if finding.get('fix_code_snippet'):
-                    report_lines.append(f"\n\n```python\n{finding['fix_code_snippet']}\n```")
-                
-                report_lines.append(f"\n\n**Reference:** {finding.get('reference', 'N/A')}")
-
-            report_lines.append("\n\n---\n")
-
-        report = "\n".join(report_lines)
-
-        if output_path:
-            with open(output_path, 'w', encoding='utf-8') as f:
-                f.write(report)
-
-        return report
+        return _generate_report(scan_results, output_path)
 
 
 # Made with Bob
