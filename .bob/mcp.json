@@ -1,10 +1,9 @@
 {
   "mcpServers": {
     "bobsuite": {
-      "command": "C:\\Users\\TANKHE~1\\OneDrive\\Hackathons\\bobsuite\\mcp_server\\venv\\Scripts\\python.exe",
-      "args": [
-        "C:\\Users\\TANKHE~1\\OneDrive\\Hackathons\\bobsuite\\mcp_server\\server.py"
-      ]
+      "command": "python",
+      "args": ["d:/bobsuite/mcp_server/server.py"],
+      "env": {"PYTHONPATH": "d:/bobsuite/mcp_server"}
     }
   }
 }
