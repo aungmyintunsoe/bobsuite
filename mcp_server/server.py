@@ -82,7 +82,8 @@ class BobSuiteMCPServer:
         result = await self.qa_sentry.scan_code(
             file_path=args["file_path"],
             scan_type=args.get("scan_type", "all"),
-            auto_fix=args.get("auto_fix", False)
+            auto_fix=args.get("auto_fix", False),
+            additional_context=args.get("additional_context")
         )
         return self._success_response(self.qa_sentry.generate_report([result]))
 
