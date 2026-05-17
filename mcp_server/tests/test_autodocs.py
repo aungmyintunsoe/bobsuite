@@ -1,30 +1,30 @@
 """
-Doc Engine Verification Test Harness
+AutoDocs Verification Test Harness
 """
 
 import asyncio
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent))
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from watsonx_client import WatsonxClient
-from lib.doc_engine import DocEngine
+from lib.autodocs import AutoDocs
 
 async def run_chronicler_test():
     print("=" * 60)
-    print("RUNNING CHRONICLER AUTO-DOC VERIFICATION")
+    print("RUNNING AUTODOCS VERIFICATION")
     print("=" * 60)
     
-    # Initialize components using the provided framework instances
+    # Initialize components
     client = WatsonxClient()
-    engine = DocEngine(client)
+    engine = AutoDocs(client)
     
-    # Locate target verification files in the workspace
-    dataset_root = Path(__file__).parent / "dataset_balancia"
+    # Locate target verification files
+    dataset_root = Path(__file__).parent.parent.parent / "dataset_balancia"
     target_file = dataset_root / "src" / "app" / "actions.ts"
     
-    # Dynamic fallback check if actions.ts is omitted
+    # Dynamic fallback
     if not target_file.exists():
         ts_files = list(dataset_root.rglob("*.ts"))
         if ts_files:
@@ -33,10 +33,10 @@ async def run_chronicler_test():
             print("[SKIP] No code files found to build docs.")
             return
 
-    print(f"Target selected: {target_file.relative_to(Path(__file__).parent)}")
-    print("Generating comprehensive README and LOGIC FLOW mapping...")
+    print(f"Target selected: {target_file.name}")
+    print("Generating comprehensive documentation...")
     
-    docs = await engine.generate_docs(str(target_file), doc_type="full")
+    docs = await engine.generate_docs(str(target_file), doc_type="api")
     
     print("\n--- GENERATED DOCUMENTATION OUTPUT PREVIEW ---")
     print("\n".join(docs.splitlines()[:25]))

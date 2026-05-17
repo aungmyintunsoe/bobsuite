@@ -8,8 +8,8 @@ import json
 import sys
 from pathlib import Path
 
-# Add parent directory to path for imports
-sys.path.insert(0, str(Path(__file__).parent))
+# Add project root to path for imports
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from watsonx_client import WatsonxClient
 from lib.qa_sentry import QASentry
@@ -181,7 +181,7 @@ async def test_core_pipeline():
         print("  Client + Sentry initialized")
 
         # Find a real TypeScript file in the dataset
-        dataset_root = Path(__file__).parent.parent / "dataset_balancia"
+        dataset_root = Path(__file__).parent.parent.parent / "dataset_balancia"
         target_file = dataset_root / "src" / "app" / "actions.ts"
 
         if not target_file.exists():
@@ -245,9 +245,9 @@ async def test_import_chain():
         ("lib.qa_sentry.parsers", "from lib.qa_sentry.parsers import sanitize_json, validate_json_schema"),
         ("lib.qa_sentry.auto_fixer", "from lib.qa_sentry.auto_fixer import apply_auto_fixes, validate_python_syntax"),
         ("lib.qa_sentry.git_utils", "from lib.qa_sentry.git_utils import parse_diff_hunks"),
-        ("lib.doc_engine", "from lib.doc_engine import DocEngine"),
-        ("lib.doc_engine.core", "from lib.doc_engine.core import DocEngine"),
-        ("lib.doc_engine.generators", "from lib.doc_engine.generators import generate_api_reference"),
+        ("lib.autodocs", "from lib.autodocs import AutoDocs"),
+        ("lib.autodocs.core", "from lib.autodocs.core import AutoDocs"),
+        ("lib.autodocs.prompts", "from lib.autodocs.prompts import get_documentation_prompt"),
     ]
 
     for name, import_stmt in tests:

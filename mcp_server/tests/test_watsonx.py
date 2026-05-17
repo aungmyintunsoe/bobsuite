@@ -7,12 +7,12 @@ import asyncio
 import sys
 from pathlib import Path
 
-# Add parent directory to path for imports
-sys.path.insert(0, str(Path(__file__).parent))
+# Add project root to path for imports
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from watsonx_client import WatsonxClient
 from lib.qa_sentry import QASentry
-from lib.doc_engine import DocEngine
+from lib.autodocs import AutoDocs
 
 
 async def test_connection():
@@ -82,7 +82,8 @@ result = calculate_sum(5, 10)
 print(result)
 """
         qa = QASentry(client)
-        prompt = qa._build_analysis_prompt(test_code, "quality", "Python")
+        # Use the system prompt directly instead of removed method
+        prompt = f"{qa.system_prompt}\n\nCODE TO ANALYZE:\n```python\n{test_code}\n```\n\nReturn ONLY valid JSON."
         
         response = await client.generate_text(prompt, temperature=0.3)
         
@@ -97,8 +98,9 @@ print(result)
     try:
         print("\n4. Testing documentation generation...")
         
-        doc = DocEngine(client)
-        prompt = doc._build_documentation_prompt(test_code, "inline", "Python")
+        doc = AutoDocs(client)
+        from lib.autodocs.prompts import get_documentation_prompt
+        prompt = get_documentation_prompt(test_code, "api", "Python")
         
         response = await client.generate_text(prompt, temperature=0.5)
         
