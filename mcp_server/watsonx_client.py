@@ -89,10 +89,15 @@ class WatsonxClient:
         **kwargs
     ) -> str:
         """
-        Generate text using watsonx.ai REST API with retry logic.
+        Generate text using watsonx.ai Chat API with retry logic.
+        
+        Uses the /ml/v1/text/chat endpoint (OpenAI-compatible chat completions).
+        The old /ml/v1/text/generation endpoint is deprecated and returns empty
+        strings for chat-oriented models like granite-4.
         
         Args:
-            prompt: The input prompt
+            prompt: The input prompt (sent as a user message)
+            model_id: The model to use
             max_tokens: Maximum tokens to generate
             temperature: Sampling temperature (0.0-1.0)
             max_retries: Maximum number of retry attempts for transient failures
@@ -106,7 +111,7 @@ class WatsonxClient:
         """
         token = await self._get_token()
         
-        url = f"{self.watsonx_url}/ml/v1/text/generation?version=2023-05-29"
+        url = f"{self.watsonx_url}/ml/v1/text/chat?version=2023-05-29"
         headers = {
             "Authorization": f"Bearer {token}",
             "Content-Type": "application/json",
@@ -115,12 +120,11 @@ class WatsonxClient:
         
         payload = {
             "model_id": model_id,
-            "input": prompt,
-            "parameters": {
-                "max_new_tokens": max_tokens,
-                "temperature": temperature,
-                **kwargs
-            },
+            "messages": [
+                {"role": "user", "content": prompt}
+            ],
+            "max_tokens": max_tokens,
+            "temperature": temperature,
             "project_id": self.project_id
         }
         
@@ -141,7 +145,8 @@ class WatsonxClient:
                         raise RuntimeError(f"watsonx.ai API Error: {response.status_code} - {response.text}")
                         
                     data = response.json()
-                    return data["results"][0]["generated_text"]
+                    # Chat API returns choices[].message.content instead of results[].generated_text
+                    return data["choices"][0]["message"]["content"]
                     
             except (httpx.TimeoutException, httpx.NetworkError, httpx.ConnectError) as e:
                 last_exception = e
@@ -219,7 +224,11 @@ class WatsonxClient:
         
         for pillar_id, pillar_data in pillars.items():
             title = pillar_titles.get(pillar_id, pillar_id.replace("_", " ").title())
-            answer = pillar_data.get("answer", "")
+            # Handle both dict format {"answer": "text"} and simple string format
+            if isinstance(pillar_data, dict):
+                answer = pillar_data.get("answer", "")
+            else:
+                answer = str(pillar_data)
             
             lines.append(f"\n## {title}")
             lines.append(f"\n{answer}")

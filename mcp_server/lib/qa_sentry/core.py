@@ -7,7 +7,6 @@ This is the main entry point. It orchestrates:
 - Context chunking for large files (>1000 lines, optimized from 500)
 - Two-pass AI analysis (Finder → Critic)
 - Auto-fix delegation
-- Git diff delegation
 - Dynamic test generation (unit, network, integration, e2e, etc.)
 - Report generation
 
@@ -25,7 +24,6 @@ ARCHITECTURE (refactored):
 - prompts.py     → Centralized prompt templates
 - parsers.py     → JSON sanitization + schema validation
 - auto_fixer.py  → Code fix application
-- git_utils.py   → Git diff scanning
 """
 
 import asyncio
@@ -37,7 +35,7 @@ from lib.utils.cache import get_cache
 from lib.qa_sentry.agents import finder_pass, critic_pass
 from lib.qa_sentry.chunking import chunk_and_analyze, build_cross_file_context
 from lib.qa_sentry.auto_fixer import apply_auto_fixes
-from lib.qa_sentry.git_utils import scan_git_diff as _scan_git_diff
+
 from lib.qa_sentry.test_generator import generate_tests
 from lib.qa_sentry.reporting import generate_report as _generate_report
 
@@ -208,7 +206,7 @@ Return ONLY valid JSON with this schema:
             }
 
     # ------------------------------------------------------------------ #
-    #                       BATCH & GIT                                   #
+    #                       BATCH SCANNING                                #
     # ------------------------------------------------------------------ #
 
     async def batch_scan(
@@ -251,16 +249,6 @@ Return ONLY valid JSON with this schema:
                 processed_results.append(result)
         
         return processed_results
-
-    async def scan_git_diff(
-        self,
-        repo_path: str,
-        staged: bool = True,
-        max_files: int = 10,
-        max_file_size_kb: int = 500
-    ) -> List[Dict[str, Any]]:
-        """Scan only changed lines from git diff with configurable limits (delegates to git_utils)."""
-        return await _scan_git_diff(self, repo_path, staged, max_files, max_file_size_kb)
 
     # ------------------------------------------------------------------ #
     #                       TEST GENERATION                               #

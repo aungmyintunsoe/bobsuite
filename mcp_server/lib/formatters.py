@@ -142,14 +142,14 @@ def format_visualizer_result(result: Dict[str, Any]) -> str:
     Returns:
         Formatted markdown string
     """
-    response = result["markdown"]
+    response = "✅ **Visualization successfully generated!**\n"
     
     if saved_to := result.get("saved_to"):
-        response += f"\n\n✅ **Blueprint saved to:** `{saved_to}`"
+        response += f"**Saved full markdown document to:** `{saved_to}`\n\n"
         
-    if image_saved_to := result.get("image_saved_to"):
-        response += f"\n🖼️ **Real Image saved to:** `{image_saved_to}`"
-        
+    response += "⚠️ **AI INSTRUCTION:** Immediately render the following Mermaid code block in your response so the user can see the diagram natively:\n\n"
+    response += result.get("mermaid", "")
+    
     return response
 
 

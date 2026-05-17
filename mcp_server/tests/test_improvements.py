@@ -17,7 +17,8 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from watsonx_client import WatsonxClient
 from lib.utils.cache import FileCache
 from lib.formatters import format_test_generation_response, format_visualizer_result
-from lib.visualizer.renderers import save_mermaid_as_png, DiagramGenerationError
+from lib.visualizer.core import VisualizerEngine
+
 from lib.utils.constants import (
     HTTP_TIMEOUT_SECONDS,
     MAX_RETRY_ATTEMPTS,
@@ -183,34 +184,6 @@ class TestCacheKeyCollision:
             assert len(parts[2]) == 32  # Content hash (MD5)
 
 
-class TestPNGGenerationErrorHandling:
-    """Test PNG generation error handling improvements"""
-    
-    def test_empty_mermaid_code_raises_error(self):
-        """Test that empty mermaid code raises DiagramGenerationError"""
-        with pytest.raises(DiagramGenerationError, match="Empty mermaid code"):
-            save_mermaid_as_png("", "output.md")
-    
-    def test_mermaid_code_with_only_wrapper_raises_error(self):
-        """Test that mermaid code with only wrapper raises error"""
-        with pytest.raises(DiagramGenerationError, match="Empty mermaid code"):
-            save_mermaid_as_png("```mermaid\n```", "output.md")
-    
-    def test_network_error_raises_diagram_error(self):
-        """Test that network errors are wrapped in DiagramGenerationError"""
-        with patch('urllib.request.urlretrieve') as mock_retrieve:
-            mock_retrieve.side_effect = Exception("Network error")
-            
-            with pytest.raises(DiagramGenerationError, match="Unexpected error"):
-                save_mermaid_as_png("graph TD\n    A-->B", "output.md")
-    
-    def test_diagram_generation_error_is_exception(self):
-        """Test that DiagramGenerationError is a proper exception"""
-        assert issubclass(DiagramGenerationError, Exception)
-        
-        error = DiagramGenerationError("Test error")
-        assert str(error) == "Test error"
-
 
 class TestFormatters:
     """Test response formatters"""
@@ -282,8 +255,7 @@ class TestFormatters:
         """Test visualizer result formatting"""
         result = {
             'markdown': '# Project Diagram\n\nSome content',
-            'saved_to': '/path/to/diagram.md',
-            'image_saved_to': '/path/to/diagram.png'
+            'saved_to': '/path/to/diagram.md'
         }
         
         formatted = format_visualizer_result(result)
@@ -291,8 +263,6 @@ class TestFormatters:
         assert '# Project Diagram' in formatted
         assert 'Blueprint saved to' in formatted
         assert '/path/to/diagram.md' in formatted
-        assert 'Real Image saved to' in formatted
-        assert '/path/to/diagram.png' in formatted
 
 
 class TestConstants:
@@ -342,11 +312,6 @@ class TestModuleSeparation:
         assert hasattr(formatters, 'format_test_generation_response')
         assert hasattr(formatters, 'format_visualizer_result')
     
-    def test_renderers_module_exists(self):
-        """Test that renderers module exists and is importable"""
-        from lib.visualizer import renderers
-        assert hasattr(renderers, 'save_mermaid_as_png')
-        assert hasattr(renderers, 'DiagramGenerationError')
     
     def test_constants_module_exists(self):
         """Test that constants module exists and is importable"""
@@ -354,6 +319,90 @@ class TestModuleSeparation:
         assert hasattr(constants, 'HTTP_TIMEOUT_SECONDS')
         assert hasattr(constants, 'MAX_RETRY_ATTEMPTS')
         assert hasattr(constants, 'DEFAULT_MAX_TOKENS')
+
+
+class TestVisualizerEngine:
+    """Test suite for the refactored, PNG-free VisualizerEngine"""
+
+    @pytest.mark.asyncio
+    async def test_dependency_chain_generation_without_png(self):
+        """Test that dependency chain generation works perfectly and outputs clean Mermaid markdown without any PNG reference"""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            # Create a simple project structure
+            proj_dir = Path(temp_dir) / "test_proj"
+            proj_dir.mkdir()
+            (proj_dir / "main.py").write_text("import utils")
+            (proj_dir / "utils.py").write_text("pass")
+            
+            output_md = proj_dir / "dependency_map.md"
+            
+            mock_client = Mock()
+            engine = VisualizerEngine(mock_client)
+            
+            # Execute dependency map generation
+            res = await engine.generate_dependency_chain(
+                project_path=str(proj_dir),
+                output_path=str(output_md),
+                max_depth=3,
+                include_external=False
+            )
+            
+            assert res["success"] is True
+            assert res["diagram_type"] == "dependency_chain"
+            assert "image_saved_to" not in res
+            assert "mermaid" in res
+            assert "markdown" in res
+            
+            # Verify the output markdown file was created and contains the mermaid diagrams
+            assert output_md.exists()
+            content = output_md.read_text(encoding="utf-8")
+            assert "```mermaid" in content
+            assert "graph TD" in content
+            # Verify the clean white background configuration is in the Mermaid markdown
+            assert "background" in content
+            assert "#ffffff" in content
+
+    @pytest.mark.asyncio
+    async def test_project_concept_generation_without_png(self):
+        """Test that concept map generation successfully returns custom component structures and avoids any PNG outputs"""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            proj_dir = Path(temp_dir) / "test_proj"
+            proj_dir.mkdir()
+            
+            output_md = proj_dir / "concept_map.md"
+            
+            # Mock Watsonx text response with valid JSON concept structure
+            mock_client = Mock()
+            mock_client.generate_text = AsyncMock(return_value="""{
+                "project_type": "Web Application",
+                "description": "Mocked test application layer concept",
+                "components": [
+                    {"name": "FrontendUI", "type": "ui", "description": "React UI Component"},
+                    {"name": "AppServer", "type": "server", "description": "FastAPI Server"}
+                ],
+                "external_services": ["Sentry"]
+            }""")
+            
+            engine = VisualizerEngine(mock_client)
+            
+            res = await engine.generate_project_concept(
+                project_path=str(proj_dir),
+                output_path=str(output_md)
+            )
+            
+            assert res["success"] is True
+            assert res["diagram_type"] == "concept_map"
+            assert "image_saved_to" not in res
+            assert res["components"] == 2
+            
+            # Verify the concept map markdown file exists and contains components
+            assert output_md.exists()
+            content = output_md.read_text(encoding="utf-8")
+            assert "FrontendUI" in content
+            assert "AppServer" in content
+            assert "Sentry" in content
+            assert "background" in content
+            assert "#ffffff" in content
 
 
 class TestIntegration:

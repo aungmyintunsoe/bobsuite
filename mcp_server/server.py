@@ -106,16 +106,7 @@ class BobSuiteMCPServer:
         )
         return self._success_response(result)
 
-    async def _handle_scan_git_diff(self, args: Dict[str, Any]) -> List[TextContent]:
-        if err := self._require_args(args, ["repo_path"]): return err
-        
-        result = await self.qa_sentry.scan_git_diff(
-            repo_path=args["repo_path"],
-            staged=args.get("staged", True),
-            max_files=args.get("max_files", 10),
-            max_file_size_kb=args.get("max_file_size_kb", 500)
-        )
-        return self._success_response(json.dumps(result, indent=2))
+
 
     async def _handle_get_framework(self, args: Dict[str, Any]) -> List[TextContent]:
         self.ideation_engine.get_framework(include_examples=args.get("include_examples", True))
@@ -249,20 +240,7 @@ class BobSuiteMCPServer:
                         "required": ["file_path"]
                     }
                 ),
-                Tool(
-                    name="scan_diff",
-                    description="Scan only changed lines from git diff.",
-                    inputSchema={
-                        "type": "object",
-                        "properties": {
-                            "repo_path": {"type": "string"},
-                            "staged": {"type": "boolean", "default": True},
-                            "max_files": {"type": "integer", "default": 10, "description": "Maximum number of files to scan (prevents timeout)"},
-                            "max_file_size_kb": {"type": "integer", "default": 500, "description": "Maximum file size in KB to scan (prevents timeout)"}
-                        },
-                        "required": ["repo_path"]
-                    }
-                ),
+
                 Tool(
                     name="get_framework",
                     description="Retrieve the 7-pillar ideation framework for feature planning.",
@@ -379,7 +357,7 @@ class BobSuiteMCPServer:
             dispatcher = {
                 "scan_code": self._handle_scan_code_quality,
                 "generate_docs": self._handle_generate_docs,
-                "scan_diff": self._handle_scan_git_diff,
+
                 "get_framework": self._handle_get_framework,
                 "generate_prd": self._handle_synthesize_plan,
                 "map_dependencies": self._handle_dependency_chain,

@@ -111,18 +111,38 @@ def _format_structured_conversation(conversation_data: Dict[str, Any]) -> str:
     pillars = conversation_data.get("pillars", {})
     formatted_parts = []
     
-    for pillar_name, pillar_data in pillars.items():
-        formatted_parts.append(f"## {pillar_name}")
+    # Map pillar IDs to human-readable titles
+    pillar_titles = {
+        "description": "What are we building?",
+        "in_scope": "What are we including?",
+        "out_scope": "What are we excluding?",
+        "implementation": "How might we build it?",
+        "acceptance": "How do we know it works?",
+        "timeline": "What's the timeline?",
+        "resources": "What resources do we need?"
+    }
+    
+    for pillar_id, pillar_data in pillars.items():
+        # Get the proper title for this pillar
+        title = pillar_titles.get(pillar_id, pillar_id.replace("_", " ").title())
+        formatted_parts.append(f"## {title}")
+        
+        # Handle both dict format {"answer": "text"} and simple string format
         if isinstance(pillar_data, dict):
-            # Handle nested dictionary structure
-            for key, value in pillar_data.items():
-                formatted_parts.append(f"**{key}:** {value}")
-        elif isinstance(pillar_data, str):
-            # Handle simple string values
-            formatted_parts.append(pillar_data)
+            answer = pillar_data.get("answer", "")
+            formatted_parts.append(answer)
+            
+            # Include follow-up Q&A if present
+            follow_ups = pillar_data.get("follow_ups", [])
+            if follow_ups:
+                formatted_parts.append("\n**Follow-up Discussion:**")
+                for fu in follow_ups:
+                    formatted_parts.append(f"Q: {fu.get('q', '')}")
+                    formatted_parts.append(f"A: {fu.get('a', '')}")
         else:
-            # Handle any other type
+            # Handle simple string values
             formatted_parts.append(str(pillar_data))
+        
         formatted_parts.append("")
     
     return "\n".join(formatted_parts)

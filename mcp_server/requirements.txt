@@ -8,8 +8,5 @@ httpx>=0.24.0
 pytest>=7.0.0
 pytest-asyncio>=0.21.0
 
-# Git operations (for qa_sentry git diff scanning)
-gitpython>=3.1.0
-
 # Optional: Enhanced functionality
 requests>=2.31.0

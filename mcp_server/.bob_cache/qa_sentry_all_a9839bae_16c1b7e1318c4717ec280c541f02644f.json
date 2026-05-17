@@ -1,0 +1,17 @@
+{
+  "timestamp": "2026-05-17T17:58:31.780263",
+  "result": {
+    "success": true,
+    "file_path": "D:\\ibmbobhack\\dataset_balancia\\src\\app\\actions.ts",
+    "language": "TypeScript",
+    "scan_type": "all",
+    "timestamp": "2026-05-17T09:58:31.780212Z",
+    "summary": {
+      "health_score": 50,
+      "risk_level": "MEDIUM",
+      "executive_summary": "JSON parsing error in Finder pass: Expecting value: line 23 column 1112 (char 7458)"
+    },
+    "findings": [],
+    "lines_analyzed": 283
+  }
+}

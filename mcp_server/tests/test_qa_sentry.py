@@ -15,7 +15,6 @@ from watsonx_client import WatsonxClient
 from lib.qa_sentry import QASentry
 from lib.qa_sentry.parsers import sanitize_json, validate_json_schema
 from lib.qa_sentry.auto_fixer import validate_python_syntax
-from lib.qa_sentry.git_utils import parse_diff_hunks
 
 
 # ------------------------------------------------------------------ #
@@ -116,53 +115,7 @@ def test_auto_fixer():
     return failed == 0
 
 
-def test_git_utils():
-    """Test git diff parsing (no API calls needed)"""
-    print("=" * 60)
-    print("TEST 3: Git Utils (parse_diff_hunks)")
-    print("=" * 60)
-    passed = 0
-    failed = 0
 
-    # Test 3a: Standard diff output
-    diff = """diff --git a/src/app.py b/src/app.py
---- a/src/app.py
-+++ b/src/app.py
-@@ -10,5 +10,8 @@
- some code
-+new line 1
-+new line 2
-"""
-    files = parse_diff_hunks(diff)
-    assert len(files) == 1, f"Expected 1 file, got {len(files)}"
-    assert files[0]['path'] == 'src/app.py'
-    assert 10 in files[0]['changed_lines']
-    print("  [PASS] 3a: Standard diff parsing")
-    passed += 1
-
-    # Test 3b: Multiple files
-    multi_diff = """diff --git a/file1.py b/file1.py
---- a/file1.py
-+++ b/file1.py
-@@ -1,3 +1,5 @@
-diff --git a/file2.js b/file2.js
---- a/file2.js
-+++ b/file2.js
-@@ -20,4 +20,6 @@
-"""
-    multi_files = parse_diff_hunks(multi_diff)
-    assert len(multi_files) == 2, f"Expected 2 files, got {len(multi_files)}"
-    print("  [PASS] 3b: Multi-file diff parsing")
-    passed += 1
-
-    # Test 3c: Empty diff
-    empty_files = parse_diff_hunks("")
-    assert len(empty_files) == 0, "Empty diff should return no files"
-    print("  [PASS] 3c: Empty diff handling")
-    passed += 1
-
-    print(f"\n  Git Utils: {passed} passed, {failed} failed\n")
-    return failed == 0
 
 
 # ------------------------------------------------------------------ #
@@ -244,7 +197,6 @@ async def test_import_chain():
         ("lib.qa_sentry.core", "from lib.qa_sentry.core import QASentry"),
         ("lib.qa_sentry.parsers", "from lib.qa_sentry.parsers import sanitize_json, validate_json_schema"),
         ("lib.qa_sentry.auto_fixer", "from lib.qa_sentry.auto_fixer import apply_auto_fixes, validate_python_syntax"),
-        ("lib.qa_sentry.git_utils", "from lib.qa_sentry.git_utils import parse_diff_hunks"),
         ("lib.autodocs", "from lib.autodocs import AutoDocs"),
         ("lib.autodocs.core", "from lib.autodocs.core import AutoDocs"),
         ("lib.autodocs.prompts", "from lib.autodocs.prompts import get_documentation_prompt"),
@@ -277,7 +229,6 @@ def main():
     # Unit tests (no API calls)
     results["parsers"] = test_parsers()
     results["auto_fixer"] = test_auto_fixer()
-    results["git_utils"] = test_git_utils()
 
     # Import chain (no API calls)
     results["imports"] = asyncio.run(test_import_chain())

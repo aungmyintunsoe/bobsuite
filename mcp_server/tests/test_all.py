@@ -19,7 +19,7 @@ from watsonx_client import WatsonxClient
 from lib.qa_sentry import QASentry
 from lib.qa_sentry.parsers import sanitize_json, validate_json_schema
 from lib.qa_sentry.auto_fixer import validate_python_syntax
-from lib.qa_sentry.git_utils import parse_diff_hunks
+
 from lib.autodocs import AutoDocs
 from lib.ideation import IdeationEngine
 from lib.visualizer import VisualizerEngine
@@ -104,34 +104,7 @@ def test_auto_fixer():
     record("auto_fixer", "Empty string accepted", validate_python_syntax(""))
 
 
-# ------------------------------------------------------------------ #
-#                   3. GIT UTILS UNIT TESTS                            #
-# ------------------------------------------------------------------ #
 
-def test_git_utils():
-    section("3. Git Utils (Diff Parsing)")
-
-    diff = """diff --git a/src/app.py b/src/app.py
---- a/src/app.py
-+++ b/src/app.py
-@@ -10,5 +10,8 @@
- some code
-+new line 1
-"""
-    files = parse_diff_hunks(diff)
-    record("git_utils", "Standard diff parsing", len(files) == 1 and 10 in files[0]['changed_lines'])
-
-    multi = """diff --git a/a.py b/a.py
---- a/a.py
-+++ b/a.py
-@@ -1,3 +1,5 @@
-diff --git a/b.js b/b.js
---- a/b.js
-+++ b/b.js
-@@ -20,4 +20,6 @@
-"""
-    record("git_utils", "Multi-file diff parsing", len(parse_diff_hunks(multi)) == 2)
-    record("git_utils", "Empty diff handling", len(parse_diff_hunks("")) == 0)
 
 
 # ------------------------------------------------------------------ #
@@ -150,7 +123,7 @@ def test_imports():
         ("lib.qa_sentry.core", "from lib.qa_sentry.core import QASentry"),
         ("lib.qa_sentry.parsers", "from lib.qa_sentry.parsers import sanitize_json, validate_json_schema"),
         ("lib.qa_sentry.auto_fixer", "from lib.qa_sentry.auto_fixer import apply_auto_fixes, validate_python_syntax"),
-        ("lib.qa_sentry.git_utils", "from lib.qa_sentry.git_utils import parse_diff_hunks"),
+
         ("lib.qa_sentry.prompts", "from lib.qa_sentry.prompts import build_finder_prompt, build_critic_prompt"),
         ("lib.autodocs", "from lib.autodocs import AutoDocs"),
         ("lib.autodocs.core", "from lib.autodocs.core import AutoDocs"),
@@ -274,10 +247,10 @@ async def test_visualizer_live():
         project = str(Path(__file__).parent.parent)
 
         result = await viz.generate_dependency_chain(project_path=project, max_depth=2)
-        passed = result.get("success", False)
+        passed = result.get("success", False) and ("image_saved_to" not in result)
         stats = result.get("stats", {})
         record("visualizer_live", "Dependency chain", passed,
-               f"Modules: {stats.get('total_modules', '?')} | Deps: {stats.get('total_dependencies', '?')}")
+               f"Modules: {stats.get('total_modules', '?')} | Deps: {stats.get('total_dependencies', '?')} (No PNG)")
     except Exception as e:
         record("visualizer_live", "Dependency chain", False, str(e))
 
@@ -312,7 +285,7 @@ def main():
     # --- Unit Tests (no API calls) ---
     test_parsers()
     test_auto_fixer()
-    test_git_utils()
+
     test_imports()
     test_reviewer_schema()
 
