@@ -49,4 +49,4 @@ secrets/
 *.log
 
 # Made with Bob
-.mcp.json
+.bob/mcp.json

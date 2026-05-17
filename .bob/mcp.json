@@ -1,1 +1,30 @@
-{"mcpServers":{"bobsuite":{"command":"python","args":["-u","D:/bobsuite/mcp_server/server.py"],"env":{"PYTHONUNBUFFERED":"1"},"disabled":false,"alwaysAllow":["scan_code","generate_docs","get_framework","generate_prd","map_dependencies","map_features","map_concept","generate_unit_tests","generate_network_tests"],"disabledTools":["scan_diff"],"timeout":300}}}
+{
+  "mcpServers": {
+    "bobsuite": {
+      "command": "python",
+      "args": [
+        "-u",
+        "d:/ibmbobhack/mcp_server/server.py"
+      ],
+      "env": {
+        "PYTHONUNBUFFERED": "1"
+      },
+      "disabled": false,
+      "alwaysAllow": [
+        "scan_code",
+        "generate_docs",
+        "get_framework",
+        "generate_prd",
+        "map_dependencies",
+        "map_features",
+        "map_concept",
+        "generate_unit_tests",
+        "generate_network_tests"
+      ],
+      "disabledTools": [
+        "scan_diff"
+      ],
+      "timeout": 300
+    }
+  }
+}
