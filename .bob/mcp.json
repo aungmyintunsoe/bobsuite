@@ -1,1 +1,1 @@
-{"mcpServers":{"bobsuite":{"command":"python","args":["d:/bobsuite/mcp_server/server.py"],"env":{"PYTHONPATH":"d:/bobsuite/mcp_server"},"alwaysAllow":[]}}}
+{"mcpServers":{"bobsuite":{"command":"python","args":["-u","d:/ibmbobhack/mcp_server/server.py"],"env":{"PYTHONUNBUFFERED":"1"},"disabled":false,"alwaysAllow":["scan_code","generate_docs","scan_diff","get_framework","generate_prd","map_dependencies","map_features","map_concept","generate_unit_tests","generate_network_tests"],"disabledTools":[],"timeout":300}}}

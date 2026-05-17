@@ -20,14 +20,14 @@ class MCPLogger:
     
     def __init__(self, name: str = "bobsuite-mcp", log_file: Optional[Path] = None):
         self.logger = logging.getLogger(name)
-        self.logger.setLevel(logging.DEBUG)
+        self.logger.setLevel(logging.INFO)
         
         # Remove any existing handlers
         self.logger.handlers.clear()
         
         # Create stderr handler (required for MCP)
         stderr_handler = logging.StreamHandler(sys.stderr)
-        stderr_handler.setLevel(logging.DEBUG)
+        stderr_handler.setLevel(logging.INFO)
         
         # Create formatter
         formatter = logging.Formatter(
