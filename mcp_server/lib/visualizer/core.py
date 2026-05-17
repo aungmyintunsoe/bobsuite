@@ -17,6 +17,7 @@ from collections import defaultdict
 # Preserving your framework utility imports
 from lib.utils import detect_language, read_file_safe, get_timestamp
 from lib.visualizer.prompts import build_feature_flow_prompt, build_project_concept_prompt
+from lib.visualizer.renderers import save_mermaid_as_png, DiagramGenerationError
 
 
 class VisualizerEngine:
@@ -349,38 +350,6 @@ class VisualizerEngine:
         out.parent.mkdir(parents=True, exist_ok=True)
         with open(out, 'w', encoding='utf-8') as f: f.write(markdown)
         return str(out)
-    
-    import base64
-    
-import base64
-import zlib
-import urllib.request
-from pathlib import Path
 
-def save_mermaid_as_png(mermaid_code: str, base_output_path: str) -> str:
-    """
-    Converts Mermaid text directly into a real PNG image using the Kroki API.
-    Requires NO local installations (no Graphviz, no Node.js).
-    """
-    try:
-        # 1. Clean the markdown wrapper off the Mermaid string
-        clean_code = mermaid_code.replace("```mermaid", "").replace("```", "").strip()
-        
-        # 2. Compress and Base64 encode the string (Kroki's requirement)
-        compressed = zlib.compress(clean_code.encode('utf-8'), 9)
-        encoded = base64.urlsafe_b64encode(compressed).decode('ascii')
-        
-        # 3. Build the API URL
-        url = f"https://kroki.io/mermaid/png/{encoded}"
-        
-        # 4. Determine the final .png file path
-        # If base_output_path is a .md file, change the extension to .png
-        out_file = Path(base_output_path).with_suffix('.png')
-        
-        # 5. Download the image and save it to disk
-        urllib.request.urlretrieve(url, str(out_file))
-        
-        return str(out_file)
-        
-    except Exception as e:
-        return f"Error generating PNG: {str(e)}"
+
+# Made with Bob

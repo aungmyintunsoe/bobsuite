@@ -51,7 +51,10 @@ class FileCache:
     
     def get_cache_key(self, file_path: str, operation: str, content: Optional[str] = None) -> str:
         """
-        Generate a cache key combining file hash and operation type.
+        Generate a cache key combining file path, file hash, and operation type.
+        
+        This prevents cache key collisions when two different files have identical content.
+        The file path is hashed to keep keys reasonably short while maintaining uniqueness.
         
         Args:
             file_path: Path to the file
@@ -59,10 +62,19 @@ class FileCache:
             content: Optional pre-loaded content
         
         Returns:
-            Cache key string
+            Cache key string in format: operation_pathhash_contenthash
         """
-        file_hash = self.get_file_hash(file_path, content)
-        return f"{operation}_{file_hash}"
+        import hashlib
+        from lib.utils.constants import CACHE_PATH_HASH_LENGTH
+        
+        # Hash the file path to prevent collisions between files with identical content
+        path_hash = hashlib.md5(file_path.encode('utf-8')).hexdigest()[:CACHE_PATH_HASH_LENGTH]
+        
+        # Hash the file content
+        content_hash = self.get_file_hash(file_path, content)
+        
+        # Combine all three components for a unique cache key
+        return f"{operation}_{path_hash}_{content_hash}"
     
     def get(self, cache_key: str) -> Optional[Dict[str, Any]]:
         """

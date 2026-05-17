@@ -19,6 +19,7 @@ from lib.qa_sentry import QASentry
 from lib.autodocs import AutoDocs
 from lib.ideation import IdeationEngine
 from lib.visualizer import VisualizerEngine
+from lib.formatters import format_test_generation_response, format_visualizer_result
 
 
 class BobSuiteMCPServer:
@@ -47,6 +48,7 @@ class BobSuiteMCPServer:
     def _success_response(self, text: str) -> List[TextContent]:
         """Standardize successful text/markdown outputs."""
         return [TextContent(type="text", text=text)]
+    
 
     def _require_args(self, args: Dict[str, Any], required_keys: List[str]) -> Optional[List[TextContent]]:
         """Check for missing parameters and return an error response if any are missing."""
@@ -60,16 +62,7 @@ class BobSuiteMCPServer:
         if not result.get("success"):
             return self._error_response(result.get("error", "Unknown visualizer error"))
         
-        response = result["markdown"]
-        
-        if saved_to := result.get("saved_to"):
-            response += f"\n\n✅ **Blueprint saved to:** `{saved_to}`"
-            
-        # Add this logic to announce the image file!
-        if image_saved_to := result.get("image_saved_to"):
-            response += f"\n🖼️ **Real Image saved to:** `{image_saved_to}`"
-            
-        return self._success_response(response)
+        return self._success_response(format_visualizer_result(result))
     
 
     # ------------------------------------------------------------------ #
@@ -155,7 +148,9 @@ class BobSuiteMCPServer:
         return self._format_visualizer_result(result)
 
     async def _handle_generate_network_tests(self, args: Dict[str, Any]) -> List[TextContent]:
-        if err := self._require_args(args, ["file_path"]): return err
+        """Generate network performance tests for a file."""
+        if err := self._require_args(args, ["file_path"]):
+            return err
         
         result = await self.qa_sentry.generate_network_performance_tests(
             file_path=args["file_path"],
@@ -166,69 +161,12 @@ class BobSuiteMCPServer:
         if not result.get("success"):
             return self._error_response(result.get("error", "Unknown error"))
         
-        # Format the response
-        response_parts = [
-            f"# Network Performance Tests Generated",
-            f"\n**File:** `{result['file_path']}`",
-            f"\n**Language:** {result['language']}",
-            f"\n**Test Framework:** {result['test_framework']}",
-            f"\n**Timestamp:** {result['timestamp']}",
-            f"\n\n## Framework Justification",
-            f"\n{result['framework_justification']}",
-            f"\n\n## Dependencies",
-            "\n```bash"
-        ]
-        
-        for dep in result.get('dependencies', []):
-            response_parts.append(f"\n{dep}")
-        response_parts.append("\n```")
-        
-        if result.get('setup_commands'):
-            response_parts.append("\n\n## Setup Commands")
-            response_parts.append("\n```bash")
-            for cmd in result['setup_commands']:
-                response_parts.append(f"\n{cmd}")
-            response_parts.append("\n```")
-        
-        response_parts.append("\n\n## Test Files")
-        for test_file in result.get('test_files', []):
-            response_parts.append(f"\n\n### {test_file['filename']}")
-            response_parts.append(f"\n{test_file['description']}")
-            response_parts.append(f"\n\n```{result['language']}")
-            response_parts.append(f"\n{test_file['content']}")
-            response_parts.append("\n```")
-        
-        if result.get('configuration_files'):
-            response_parts.append("\n\n## Configuration Files")
-            for config_file in result['configuration_files']:
-                response_parts.append(f"\n\n### {config_file['filename']}")
-                response_parts.append(f"\n{config_file['description']}")
-                response_parts.append(f"\n\n```{result['language']}")
-                response_parts.append(f"\n{config_file['content']}")
-                response_parts.append("\n```")
-        
-        response_parts.append("\n\n## Execution Command")
-        response_parts.append(f"\n```bash\n{result['execution_command']}\n```")
-        
-        if result.get('performance_thresholds'):
-            response_parts.append("\n\n## Performance Thresholds")
-            thresholds = result['performance_thresholds']
-            response_parts.append(f"\n- **Response Time:** {thresholds.get('response_time_ms', 'N/A')} ms")
-            response_parts.append(f"\n- **Throughput:** {thresholds.get('throughput_rps', 'N/A')} requests/sec")
-            response_parts.append(f"\n- **Error Rate:** {thresholds.get('error_rate_percent', 'N/A')}%")
-        
-        if result.get('test_scenarios'):
-            response_parts.append("\n\n## Test Scenarios")
-            for scenario in result['test_scenarios']:
-                response_parts.append(f"\n- {scenario}")
-        
-        if result.get('notes'):
-            response_parts.append(f"\n\n## Notes\n{result['notes']}")
-        
-        return self._success_response("".join(response_parts))
+        return self._success_response(format_test_generation_response(result, test_type='network'))
 
     async def _handle_generate_unit_tests(self, args: Dict[str, Any]) -> List[TextContent]:
-        if err := self._require_args(args, ["file_path"]): return err
+        """Generate unit tests for a file using Steve Sanderson principles."""
+        if err := self._require_args(args, ["file_path"]):
+            return err
         
         result = await self.qa_sentry.generate_unit_tests(
             file_path=args["file_path"],
@@ -239,83 +177,7 @@ class BobSuiteMCPServer:
         if not result.get("success"):
             return self._error_response(result.get("error", "Unknown error"))
         
-        # Format the response
-        response_parts = [
-            f"# Unit Tests Generated (Steve Sanderson Principles)",
-            f"\n**File:** `{result['file_path']}`",
-            f"\n**Language:** {result['language']}",
-            f"\n**Test Framework:** {result['test_framework']}",
-            f"\n**Timestamp:** {result['timestamp']}",
-            f"\n\n## Framework Justification",
-            f"\n{result['framework_justification']}",
-            f"\n\n## Dependencies",
-            "\n```bash"
-        ]
-        
-        for dep in result.get('dependencies', []):
-            response_parts.append(f"\n{dep}")
-        response_parts.append("\n```")
-        
-        if result.get('setup_commands'):
-            response_parts.append("\n\n## Setup Commands")
-            response_parts.append("\n```bash")
-            for cmd in result['setup_commands']:
-                response_parts.append(f"\n{cmd}")
-            response_parts.append("\n```")
-        
-        response_parts.append("\n\n## Test Files")
-        for test_file in result.get('test_files', []):
-            response_parts.append(f"\n\n### {test_file['filename']}")
-            response_parts.append(f"\n{test_file['description']}")
-            response_parts.append(f"\n\n```{result['language']}")
-            response_parts.append(f"\n{test_file['content']}")
-            response_parts.append("\n```")
-        
-        if result.get('configuration_files'):
-            response_parts.append("\n\n## Configuration Files")
-            for config_file in result['configuration_files']:
-                response_parts.append(f"\n\n### {config_file['filename']}")
-                response_parts.append(f"\n{config_file['description']}")
-                response_parts.append(f"\n\n```{result['language']}")
-                response_parts.append(f"\n{config_file['content']}")
-                response_parts.append("\n```")
-        
-        response_parts.append("\n\n## Execution Command")
-        response_parts.append(f"\n```bash\n{result['execution_command']}\n```")
-        
-        if result.get('mock_strategy'):
-            response_parts.append("\n\n## Mock Strategy")
-            mock_strat = result['mock_strategy']
-            response_parts.append(f"\n**Mocking Library:** {mock_strat.get('mocking_library', 'N/A')}")
-            if mock_strat.get('external_dependencies'):
-                response_parts.append("\n\n**External Dependencies Mocked:**")
-                for dep in mock_strat['external_dependencies']:
-                    response_parts.append(f"\n- {dep}")
-            if mock_strat.get('mock_examples'):
-                response_parts.append("\n\n**Mock Patterns:**")
-                for example in mock_strat['mock_examples']:
-                    response_parts.append(f"\n- {example}")
-        
-        if result.get('test_coverage'):
-            response_parts.append("\n\n## Test Coverage")
-            coverage = result['test_coverage']
-            response_parts.append(f"\n**Total Tests:** {coverage.get('test_count', 'N/A')}")
-            if coverage.get('units_tested'):
-                response_parts.append("\n\n**Units Tested:**")
-                for unit in coverage['units_tested']:
-                    response_parts.append(f"\n- {unit}")
-            if coverage.get('coverage_notes'):
-                response_parts.append(f"\n\n{coverage['coverage_notes']}")
-        
-        if result.get('design_principles_applied'):
-            response_parts.append("\n\n## Design Principles Applied")
-            for principle in result['design_principles_applied']:
-                response_parts.append(f"\n- {principle}")
-        
-        if result.get('notes'):
-            response_parts.append(f"\n\n## Notes\n{result['notes']}")
-        
-        return self._success_response("".join(response_parts))
+        return self._success_response(format_test_generation_response(result, test_type='unit'))
 
     # ------------------------------------------------------------------ #
     #                      MCP REGISTRATION                              #
