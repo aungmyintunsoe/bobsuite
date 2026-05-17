@@ -1,12 +1,15 @@
 
-# Environment variables
+# Core dependencies
 python-dotenv>=1.0.0
-
-# Model Context Protocol
 mcp>=0.9.0
-
-# HTTP client for API requests
 httpx>=0.24.0
 
-# Optional: For enhanced functionality
+# Testing framework
+pytest>=7.0.0
+pytest-asyncio>=0.21.0
+
+# Git operations (for qa_sentry git diff scanning)
+gitpython>=3.1.0
+
+# Optional: Enhanced functionality
 requests>=2.31.0

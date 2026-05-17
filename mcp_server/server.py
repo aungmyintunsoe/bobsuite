@@ -16,7 +16,7 @@ from mcp.server import Server
 from mcp.types import Tool, TextContent
 from watsonx_client import WatsonxClient
 from lib.qa_sentry import QASentry
-from lib.doc_engine import DocEngine
+from lib.autodocs import AutoDocs
 from lib.ideation import IdeationEngine
 from lib.visualizer import VisualizerEngine
 
@@ -28,7 +28,7 @@ class BobSuiteMCPServer:
         self.server = Server("bobsuite-mcp")
         self.watsonx = WatsonxClient()
         self.qa_sentry = QASentry(self.watsonx)
-        self.doc_engine = DocEngine(self.watsonx)
+        self.autodocs = AutoDocs(self.watsonx)
         self.ideation_engine = IdeationEngine(self.watsonx)
         self.visualizer = VisualizerEngine(self.watsonx)
         
@@ -89,8 +89,8 @@ class BobSuiteMCPServer:
     async def _handle_generate_docs(self, args: Dict[str, Any]) -> List[TextContent]:
         if err := self._require_args(args, ["file_path"]): return err
         
-        result = await self.doc_engine.generate_docs(
-            args["file_path"], 
+        result = await self.autodocs.generate_docs(
+            args["file_path"],
             args.get("doc_type", "full")
         )
         return self._success_response(result)
@@ -179,12 +179,17 @@ class BobSuiteMCPServer:
                 ),
                 Tool(
                     name="generate_documentation",
-                    description="Generate comprehensive documentation for code using watsonx.ai",
+                    description="Generate comprehensive documentation for code using watsonx.ai. Supports 12 documentation types including user manuals, tutorials, API docs, and more.",
                     inputSchema={
                         "type": "object",
                         "properties": {
-                            "file_path": {"type": "string"},
-                            "doc_type": {"type": "string", "enum": ["inline", "api", "readme", "full"]}
+                            "file_path": {"type": "string", "description": "Path to the code file to document"},
+                            "doc_type": {
+                                "type": "string",
+                                "enum": ["user_manual", "how_to_guide", "quick_start", "tutorial", "troubleshooting", "user_persona", "knowledge_base", "ux_design", "wireframe", "requirements", "api", "full"],
+                                "default": "full",
+                                "description": "Type of documentation to generate"
+                            }
                         },
                         "required": ["file_path"]
                     }

@@ -1,6 +1,10 @@
 """
 Visualizer Engine - Core Orchestrator
 Auto-generates visual diagrams for project onboarding
+
+OPTIMIZATIONS:
+- Extracted prompts for easier maintenance
+- Ready for modular refactoring (dependency_analyzer, feature_mapper, etc.)
 """
 
 import ast
@@ -12,6 +16,7 @@ from collections import defaultdict
 
 # Preserving your framework utility imports
 from lib.utils import detect_language, read_file_safe, get_timestamp
+from lib.visualizer.prompts import build_feature_flow_prompt, build_project_concept_prompt
 
 
 class VisualizerEngine:
@@ -192,27 +197,11 @@ class VisualizerEngine:
 
     async def _analyze_features_with_ai(self, target_path: Path, feature_name: Optional[str]) -> Dict[str, Any]:
         context = self._gather_project_context(target_path)
-        prompt = f"""You are an elite software architect. Analyze this system configuration and output valid JSON mapping core operational routes.
-Project name: {target_path.name}
-Files layout context:
-{context["structure"]}
-
-Key File Sample Configurations:
-{context["key_files"]}
-
-Task: Identify main systemic workflows. Return strict valid JSON with NO markdown formatting outside the JSON block object itself:
-{{
-  "features": [
-    {{
-      "name": "Feature Title",
-      "description": "Functional description",
-      "entry_point": "file_path.py",
-      "flow_steps": [
-        {{"actor": "User", "action": "Interacts with UI", "target": "Controller"}}
-      ]
-    }}
-  ]
-}}"""
+        prompt = build_feature_flow_prompt(
+            project_name=target_path.name,
+            structure=context["structure"],
+            key_files=context["key_files"]
+        )
         response = await self.watsonx.generate_text(prompt=prompt, max_tokens=2500, temperature=0.1)
         try:
             json_match = re.search(r'\{.*\}', response, re.DOTALL)
@@ -279,25 +268,10 @@ Task: Identify main systemic workflows. Return strict valid JSON with NO markdow
 
     async def _analyze_project_concept_with_ai(self, target_path: Path) -> Dict[str, Any]:
         context = self._gather_project_context(target_path)
-        prompt = f"""Analyze systemic dependencies and build an structural architectural outline model.
-Project Root: {target_path.name}
-File System:
-{context["structure"]}
-
-Return strict structural architecture maps as JSON format matching blueprint details:
-{{
-  "project_type": "Web App / Microservice / CLI",
-  "description": "High level summary description",
-  "components": [
-    {{
-      "name": "Component Module",
-      "type": "ui/server/database/api/external",
-      "description": "Responsibilities",
-      "connects_to": []
-    }}
-  ],
-  "external_services": []
-}}"""
+        prompt = build_project_concept_prompt(
+            project_name=target_path.name,
+            structure=context["structure"]
+        )
         response = await self.watsonx.generate_text(prompt=prompt, max_tokens=1500, temperature=0.2)
         try:
             json_match = re.search(r'\{.*\}', response, re.DOTALL)

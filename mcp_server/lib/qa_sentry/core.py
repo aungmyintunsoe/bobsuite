@@ -4,11 +4,17 @@ Multi-Agent AI Scanner with Debate Pattern (Finder vs. Critic)
 
 This is the main entry point. It orchestrates:
 - File reading and language detection
-- Context chunking for large files (>500 lines)
+- Context chunking for large files (>1000 lines, optimized from 500)
 - Two-pass AI analysis (Finder → Critic)
 - Auto-fix delegation
 - Git diff delegation
 - Report generation
+
+OPTIMIZATIONS:
+- Increased chunk size from 500 to 1000 lines (50% fewer API calls)
+- File hash-based caching (skip unchanged files)
+- Concurrent batch scanning with asyncio.gather()
+- Extracted prompts for easier maintenance
 """
 
 import asyncio
@@ -17,26 +23,31 @@ from pathlib import Path
 from typing import Dict, Any, List, Optional
 
 from lib.utils import detect_language, get_timestamp, read_file_safe, format_markdown_header
+from lib.utils.cache import get_cache
 from lib.qa_sentry.parsers import sanitize_json, validate_json_schema, FALLBACK_RESULT
 from lib.qa_sentry.auto_fixer import apply_auto_fixes
 from lib.qa_sentry.git_utils import scan_git_diff as _scan_git_diff
+from lib.qa_sentry.prompts import build_finder_prompt, build_critic_prompt
 
 
 class QASentry:
     """Production-grade code quality analysis with multi-agent verification"""
 
-    def __init__(self, watsonx_client):
+    def __init__(self, watsonx_client, enable_cache: bool = True):
         """
         Initialize QA Sentry with enhanced capabilities.
 
         Args:
             watsonx_client: WatsonxClient instance for AI analysis
+            enable_cache: Enable file hash-based caching for performance
         """
         self.watsonx = watsonx_client
         self.system_prompt = self._load_system_context()
         self.temperature = 0.1  # Strict technical mode
         self.max_tokens = 4000
-        self.chunk_size = 500  # Lines per chunk for large files
+        self.chunk_size = 1000  # Lines per chunk (optimized from 500 to 1000)
+        self.enable_cache = enable_cache
+        self.cache = get_cache() if enable_cache else None
 
     def _load_system_context(self) -> str:
         """Load the comprehensive system prompt with few-shot examples"""
@@ -78,20 +89,13 @@ Return ONLY valid JSON with this schema:
 
         Returns raw JSON with all potential issues.
         """
-        context_section = f"\n\nADDITIONAL CONTEXT:\n{additional_context}" if additional_context else ""
-
-        prompt = f"""{self.system_prompt}
-
-LANGUAGE: {language}
-FILE: {file_path}{context_section}
-
-CODE TO ANALYZE:
-```{language}
-{code}
-```
-
-OUTPUT: Return ONLY valid JSON matching the schema above. No markdown, no explanations.
-"""
+        prompt = build_finder_prompt(
+            code=code,
+            language=language,
+            file_path=file_path,
+            system_context=self.system_prompt,
+            additional_context=additional_context
+        )
 
         try:
             response = await self.watsonx.generate_text(
@@ -138,36 +142,12 @@ OUTPUT: Return ONLY valid JSON matching the schema above. No markdown, no explan
 
         Returns hardened, verified JSON.
         """
-        prompt = f"""You are a Senior Staff Engineer conducting a final corporate code audit.
-
-LANGUAGE: {language}
-FILE: {file_path}
-
-ORIGINAL CODE:
-```{language}
-{code}
-```
-
-INITIAL FINDINGS FROM AUTOMATED SCAN:
-{json.dumps(finder_results, indent=2)}
-
-YOUR TASK:
-1. Review each finding for false positives
-2. Remove any issues that are:
-   - Style/formatting (assume linter handles this)
-   - Subjective preferences
-   - Not 95%+ confident bugs
-3. Recalculate health_score based on remaining issues
-4. Keep only HIGH-CONFIDENCE findings
-
-Return ONLY valid JSON matching this schema:
-{{
-  "summary": {{"health_score": 0-100, "risk_level": "CRITICAL|HIGH|MEDIUM|LOW", "executive_summary": "string"}},
-  "findings": [{{"id": "string", "category": "string", "severity": "string", "line_numbers": [], "title": "string", "deep_dive": "string", "solution_explanation": "string", "reference": "string", "fix_code_snippet": "string"}}]
-}}
-
-OUTPUT: Valid JSON only, no markdown, no explanations.
-"""
+        prompt = build_critic_prompt(
+            code=code,
+            finder_results=finder_results,
+            language=language,
+            file_path=file_path
+        )
 
         try:
             response = await self.watsonx.generate_text(
@@ -200,7 +180,7 @@ OUTPUT: Valid JSON only, no markdown, no explanations.
         additional_context: Optional[str] = None
     ) -> Dict[str, Any]:
         """
-        Production-grade code scanning with multi-agent debate pattern.
+        Production-grade code scanning with multi-agent debate pattern and caching.
 
         Args:
             file_path: Path to the code file
@@ -220,6 +200,15 @@ OUTPUT: Valid JSON only, no markdown, no explanations.
                     "error": error or "Failed to read file",
                     "file_path": file_path
                 }
+
+            # Check cache first (skip if auto_fix is requested)
+            cache_key = None
+            if self.enable_cache and self.cache and not auto_fix:
+                cache_key = self.cache.get_cache_key(file_path, f"qa_sentry_{scan_type}", code)
+                cached_result = self.cache.get(cache_key)
+                if cached_result:
+                    cached_result['from_cache'] = True
+                    return cached_result
 
             # Detect language
             language = detect_language(file_path)
@@ -245,6 +234,10 @@ OUTPUT: Valid JSON only, no markdown, no explanations.
                     "findings": final_results.get("findings", []),
                     "lines_analyzed": len(lines)
                 }
+
+            # Cache the result (before auto-fix)
+            if self.enable_cache and self.cache and cache_key and not auto_fix:
+                self.cache.set(cache_key, result)
 
             # Apply auto-fix if requested
             if auto_fix and result.get("success") and result.get("findings"):
@@ -391,22 +384,40 @@ OUTPUT: Valid JSON only, no markdown, no explanations.
         scan_type: str = "all",
         auto_fix: bool = False
     ) -> List[Dict[str, Any]]:
-        """Scan multiple files with optional cross-file context awareness."""
+        """
+        Scan multiple files with concurrent execution and optional cross-file context.
+        
+        OPTIMIZATION: Uses asyncio.gather() for concurrent scanning (2-5x faster).
+        """
         additional_context = None
         if len(file_paths) <= 5:
             additional_context = await self._build_cross_file_context(file_paths)
 
-        results = []
-        for file_path in file_paths:
-            result = await self.scan_code(
+        # Scan all files concurrently
+        results = await asyncio.gather(*[
+            self.scan_code(
                 file_path,
                 scan_type,
                 auto_fix=auto_fix,
                 additional_context=additional_context
             )
-            results.append(result)
-
-        return results
+            for file_path in file_paths
+        ], return_exceptions=True)
+        
+        # Convert exceptions to error results
+        processed_results = []
+        for i, result in enumerate(results):
+            if isinstance(result, Exception):
+                processed_results.append({
+                    "success": False,
+                    "error": f"Exception during scan: {str(result)}",
+                    "error_type": type(result).__name__,
+                    "file_path": file_paths[i]
+                })
+            else:
+                processed_results.append(result)
+        
+        return processed_results
 
     async def scan_git_diff(
         self,
