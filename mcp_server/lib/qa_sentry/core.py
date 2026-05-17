@@ -27,7 +27,12 @@ from lib.utils.cache import get_cache
 from lib.qa_sentry.parsers import sanitize_json, validate_json_schema, FALLBACK_RESULT
 from lib.qa_sentry.auto_fixer import apply_auto_fixes
 from lib.qa_sentry.git_utils import scan_git_diff as _scan_git_diff
-from lib.qa_sentry.prompts import build_finder_prompt, build_critic_prompt
+from lib.qa_sentry.prompts import (
+    build_finder_prompt,
+    build_critic_prompt,
+    build_network_performance_test_prompt,
+    build_unit_test_generation_prompt
+)
 
 
 class QASentry:
@@ -426,6 +431,185 @@ Return ONLY valid JSON with this schema:
     ) -> List[Dict[str, Any]]:
         """Scan only changed lines from git diff (delegates to git_utils)."""
         return await _scan_git_diff(self, repo_path, staged)
+
+    # ------------------------------------------------------------------ #
+    #                       TESTING FEATURES                              #
+    # ------------------------------------------------------------------ #
+
+    async def generate_network_performance_tests(
+        self,
+        file_path: str,
+        testing_library: Optional[str] = None,
+        test_requirements: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Generate comprehensive network performance tests for API endpoints and network calls.
+        
+        Args:
+            file_path: Path to the code file containing network/API code
+            testing_library: Optional specific testing library (e.g., 'jest', 'postman', 'pytest')
+            test_requirements: Optional specific requirements for the tests
+        
+        Returns:
+            Dictionary containing test files, setup commands, and execution instructions
+        """
+        try:
+            # Read the file
+            code, error = read_file_safe(file_path)
+            if error or code is None:
+                return {
+                    "success": False,
+                    "error": error or "Failed to read file",
+                    "file_path": file_path
+                }
+
+            # Detect language
+            language = detect_language(file_path)
+            if not language or language == "Unknown":
+                language = "text"
+
+            # Build the prompt
+            prompt = build_network_performance_test_prompt(
+                code=code,
+                language=language,
+                file_path=file_path,
+                testing_library=testing_library,
+                test_requirements=test_requirements
+            )
+
+            # Generate tests using watsonx
+            response = await self.watsonx.generate_text(
+                prompt,
+                temperature=0.2,  # Slightly higher for creative test generation
+                max_tokens=6000   # More tokens for comprehensive test suites
+            )
+
+            # Parse the JSON response
+            clean_json = sanitize_json(response)
+            test_data = json.loads(clean_json)
+
+            # Add metadata
+            result = {
+                "success": True,
+                "file_path": file_path,
+                "language": language,
+                "timestamp": get_timestamp(),
+                "test_type": "network_performance",
+                "test_framework": test_data.get("test_framework"),
+                "framework_justification": test_data.get("framework_justification"),
+                "dependencies": test_data.get("dependencies", []),
+                "setup_commands": test_data.get("setup_commands", []),
+                "test_files": test_data.get("test_files", []),
+                "execution_command": test_data.get("execution_command"),
+                "configuration_files": test_data.get("configuration_files", []),
+                "performance_thresholds": test_data.get("performance_thresholds", {}),
+                "test_scenarios": test_data.get("test_scenarios", []),
+                "notes": test_data.get("notes", "")
+            }
+
+            return result
+
+        except json.JSONDecodeError as e:
+            return {
+                "success": False,
+                "error": f"JSON parsing error: {str(e)}",
+                "file_path": file_path
+            }
+        except Exception as e:
+            return {
+                "success": False,
+                "error": f"Unexpected error: {str(e)}",
+                "error_type": type(e).__name__,
+                "file_path": file_path
+            }
+
+    async def generate_unit_tests(
+        self,
+        file_path: str,
+        testing_library: Optional[str] = None,
+        test_requirements: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Generate comprehensive unit tests following Steve Sanderson principles.
+        
+        Args:
+            file_path: Path to the code file to generate unit tests for
+            testing_library: Optional specific testing library (e.g., 'jest', 'pytest', 'junit')
+            test_requirements: Optional specific requirements for the tests
+        
+        Returns:
+            Dictionary containing test files, setup commands, and execution instructions
+        """
+        try:
+            # Read the file
+            code, error = read_file_safe(file_path)
+            if error or code is None:
+                return {
+                    "success": False,
+                    "error": error or "Failed to read file",
+                    "file_path": file_path
+                }
+
+            # Detect language
+            language = detect_language(file_path)
+            if not language or language == "Unknown":
+                language = "text"
+
+            # Build the prompt
+            prompt = build_unit_test_generation_prompt(
+                code=code,
+                language=language,
+                file_path=file_path,
+                testing_library=testing_library,
+                test_requirements=test_requirements
+            )
+
+            # Generate tests using watsonx
+            response = await self.watsonx.generate_text(
+                prompt,
+                temperature=0.2,  # Slightly higher for creative test generation
+                max_tokens=6000   # More tokens for comprehensive test suites
+            )
+
+            # Parse the JSON response
+            clean_json = sanitize_json(response)
+            test_data = json.loads(clean_json)
+
+            # Add metadata
+            result = {
+                "success": True,
+                "file_path": file_path,
+                "language": language,
+                "timestamp": get_timestamp(),
+                "test_type": "unit_tests",
+                "test_framework": test_data.get("test_framework"),
+                "framework_justification": test_data.get("framework_justification"),
+                "dependencies": test_data.get("dependencies", []),
+                "setup_commands": test_data.get("setup_commands", []),
+                "test_files": test_data.get("test_files", []),
+                "execution_command": test_data.get("execution_command"),
+                "configuration_files": test_data.get("configuration_files", []),
+                "mock_strategy": test_data.get("mock_strategy", {}),
+                "test_coverage": test_data.get("test_coverage", {}),
+                "design_principles_applied": test_data.get("design_principles_applied", []),
+                "notes": test_data.get("notes", "")
+            }
+
+            return result
+
+        except json.JSONDecodeError as e:
+            return {
+                "success": False,
+                "error": f"JSON parsing error: {str(e)}",
+                "file_path": file_path
+            }
+        except Exception as e:
+            return {
+                "success": False,
+                "error": f"Unexpected error: {str(e)}",
+                "error_type": type(e).__name__,
+                "file_path": file_path
+            }
 
     # ------------------------------------------------------------------ #
     #                       REPORTING                                     #

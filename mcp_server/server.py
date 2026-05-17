@@ -154,6 +154,169 @@ class BobSuiteMCPServer:
         )
         return self._format_visualizer_result(result)
 
+    async def _handle_generate_network_tests(self, args: Dict[str, Any]) -> List[TextContent]:
+        if err := self._require_args(args, ["file_path"]): return err
+        
+        result = await self.qa_sentry.generate_network_performance_tests(
+            file_path=args["file_path"],
+            testing_library=args.get("testing_library"),
+            test_requirements=args.get("test_requirements")
+        )
+        
+        if not result.get("success"):
+            return self._error_response(result.get("error", "Unknown error"))
+        
+        # Format the response
+        response_parts = [
+            f"# Network Performance Tests Generated",
+            f"\n**File:** `{result['file_path']}`",
+            f"\n**Language:** {result['language']}",
+            f"\n**Test Framework:** {result['test_framework']}",
+            f"\n**Timestamp:** {result['timestamp']}",
+            f"\n\n## Framework Justification",
+            f"\n{result['framework_justification']}",
+            f"\n\n## Dependencies",
+            "\n```bash"
+        ]
+        
+        for dep in result.get('dependencies', []):
+            response_parts.append(f"\n{dep}")
+        response_parts.append("\n```")
+        
+        if result.get('setup_commands'):
+            response_parts.append("\n\n## Setup Commands")
+            response_parts.append("\n```bash")
+            for cmd in result['setup_commands']:
+                response_parts.append(f"\n{cmd}")
+            response_parts.append("\n```")
+        
+        response_parts.append("\n\n## Test Files")
+        for test_file in result.get('test_files', []):
+            response_parts.append(f"\n\n### {test_file['filename']}")
+            response_parts.append(f"\n{test_file['description']}")
+            response_parts.append(f"\n\n```{result['language']}")
+            response_parts.append(f"\n{test_file['content']}")
+            response_parts.append("\n```")
+        
+        if result.get('configuration_files'):
+            response_parts.append("\n\n## Configuration Files")
+            for config_file in result['configuration_files']:
+                response_parts.append(f"\n\n### {config_file['filename']}")
+                response_parts.append(f"\n{config_file['description']}")
+                response_parts.append(f"\n\n```{result['language']}")
+                response_parts.append(f"\n{config_file['content']}")
+                response_parts.append("\n```")
+        
+        response_parts.append("\n\n## Execution Command")
+        response_parts.append(f"\n```bash\n{result['execution_command']}\n```")
+        
+        if result.get('performance_thresholds'):
+            response_parts.append("\n\n## Performance Thresholds")
+            thresholds = result['performance_thresholds']
+            response_parts.append(f"\n- **Response Time:** {thresholds.get('response_time_ms', 'N/A')} ms")
+            response_parts.append(f"\n- **Throughput:** {thresholds.get('throughput_rps', 'N/A')} requests/sec")
+            response_parts.append(f"\n- **Error Rate:** {thresholds.get('error_rate_percent', 'N/A')}%")
+        
+        if result.get('test_scenarios'):
+            response_parts.append("\n\n## Test Scenarios")
+            for scenario in result['test_scenarios']:
+                response_parts.append(f"\n- {scenario}")
+        
+        if result.get('notes'):
+            response_parts.append(f"\n\n## Notes\n{result['notes']}")
+        
+        return self._success_response("".join(response_parts))
+
+    async def _handle_generate_unit_tests(self, args: Dict[str, Any]) -> List[TextContent]:
+        if err := self._require_args(args, ["file_path"]): return err
+        
+        result = await self.qa_sentry.generate_unit_tests(
+            file_path=args["file_path"],
+            testing_library=args.get("testing_library"),
+            test_requirements=args.get("test_requirements")
+        )
+        
+        if not result.get("success"):
+            return self._error_response(result.get("error", "Unknown error"))
+        
+        # Format the response
+        response_parts = [
+            f"# Unit Tests Generated (Steve Sanderson Principles)",
+            f"\n**File:** `{result['file_path']}`",
+            f"\n**Language:** {result['language']}",
+            f"\n**Test Framework:** {result['test_framework']}",
+            f"\n**Timestamp:** {result['timestamp']}",
+            f"\n\n## Framework Justification",
+            f"\n{result['framework_justification']}",
+            f"\n\n## Dependencies",
+            "\n```bash"
+        ]
+        
+        for dep in result.get('dependencies', []):
+            response_parts.append(f"\n{dep}")
+        response_parts.append("\n```")
+        
+        if result.get('setup_commands'):
+            response_parts.append("\n\n## Setup Commands")
+            response_parts.append("\n```bash")
+            for cmd in result['setup_commands']:
+                response_parts.append(f"\n{cmd}")
+            response_parts.append("\n```")
+        
+        response_parts.append("\n\n## Test Files")
+        for test_file in result.get('test_files', []):
+            response_parts.append(f"\n\n### {test_file['filename']}")
+            response_parts.append(f"\n{test_file['description']}")
+            response_parts.append(f"\n\n```{result['language']}")
+            response_parts.append(f"\n{test_file['content']}")
+            response_parts.append("\n```")
+        
+        if result.get('configuration_files'):
+            response_parts.append("\n\n## Configuration Files")
+            for config_file in result['configuration_files']:
+                response_parts.append(f"\n\n### {config_file['filename']}")
+                response_parts.append(f"\n{config_file['description']}")
+                response_parts.append(f"\n\n```{result['language']}")
+                response_parts.append(f"\n{config_file['content']}")
+                response_parts.append("\n```")
+        
+        response_parts.append("\n\n## Execution Command")
+        response_parts.append(f"\n```bash\n{result['execution_command']}\n```")
+        
+        if result.get('mock_strategy'):
+            response_parts.append("\n\n## Mock Strategy")
+            mock_strat = result['mock_strategy']
+            response_parts.append(f"\n**Mocking Library:** {mock_strat.get('mocking_library', 'N/A')}")
+            if mock_strat.get('external_dependencies'):
+                response_parts.append("\n\n**External Dependencies Mocked:**")
+                for dep in mock_strat['external_dependencies']:
+                    response_parts.append(f"\n- {dep}")
+            if mock_strat.get('mock_examples'):
+                response_parts.append("\n\n**Mock Patterns:**")
+                for example in mock_strat['mock_examples']:
+                    response_parts.append(f"\n- {example}")
+        
+        if result.get('test_coverage'):
+            response_parts.append("\n\n## Test Coverage")
+            coverage = result['test_coverage']
+            response_parts.append(f"\n**Total Tests:** {coverage.get('test_count', 'N/A')}")
+            if coverage.get('units_tested'):
+                response_parts.append("\n\n**Units Tested:**")
+                for unit in coverage['units_tested']:
+                    response_parts.append(f"\n- {unit}")
+            if coverage.get('coverage_notes'):
+                response_parts.append(f"\n\n{coverage['coverage_notes']}")
+        
+        if result.get('design_principles_applied'):
+            response_parts.append("\n\n## Design Principles Applied")
+            for principle in result['design_principles_applied']:
+                response_parts.append(f"\n- {principle}")
+        
+        if result.get('notes'):
+            response_parts.append(f"\n\n## Notes\n{result['notes']}")
+        
+        return self._success_response("".join(response_parts))
+
     # ------------------------------------------------------------------ #
     #                      MCP REGISTRATION                              #
     # ------------------------------------------------------------------ #
@@ -272,6 +435,50 @@ class BobSuiteMCPServer:
                         },
                         "required": ["project_path"]
                     }
+                ),
+                Tool(
+                    name="generate_network_performance_tests",
+                    description="Generate comprehensive network performance tests for API endpoints and network calls. Bob autonomously selects the best testing framework or uses the one you specify (Jest, Postman/Newman, Pytest, Artillery, k6, etc.).",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "file_path": {
+                                "type": "string",
+                                "description": "Path to the code file containing API/network code"
+                            },
+                            "testing_library": {
+                                "type": "string",
+                                "description": "Optional: Specific testing library to use (e.g., 'jest', 'postman', 'pytest', 'artillery', 'k6'). If not specified, Bob will autonomously select the best one."
+                            },
+                            "test_requirements": {
+                                "type": "string",
+                                "description": "Optional: Specific requirements or scenarios to test (e.g., 'test rate limiting', 'concurrent requests', 'timeout handling')"
+                            }
+                        },
+                        "required": ["file_path"]
+                    }
+                ),
+                Tool(
+                    name="generate_unit_tests",
+                    description="Generate comprehensive unit tests following Steve Sanderson principles (S/S/R naming, isolation, mocking, single assertions). Bob autonomously selects the best testing framework or uses the one you specify (Jest, Pytest, JUnit, NUnit, etc.).",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "file_path": {
+                                "type": "string",
+                                "description": "Path to the code file to generate unit tests for"
+                            },
+                            "testing_library": {
+                                "type": "string",
+                                "description": "Optional: Specific testing library to use (e.g., 'jest', 'pytest', 'junit', 'nunit'). If not specified, Bob will autonomously select the best one."
+                            },
+                            "test_requirements": {
+                                "type": "string",
+                                "description": "Optional: Specific requirements or focus areas for the tests"
+                            }
+                        },
+                        "required": ["file_path"]
+                    }
                 )
             ]
         
@@ -288,7 +495,9 @@ class BobSuiteMCPServer:
                 "synthesize_project_plan": self._handle_synthesize_plan,
                 "generate_dependency_chain": self._handle_dependency_chain,
                 "generate_feature_flow": self._handle_feature_flow,
-                "generate_project_concept": self._handle_project_concept
+                "generate_project_concept": self._handle_project_concept,
+                "generate_network_performance_tests": self._handle_generate_network_tests,
+                "generate_unit_tests": self._handle_generate_unit_tests
             }
 
             try:
