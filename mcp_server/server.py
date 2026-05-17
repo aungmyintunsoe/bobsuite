@@ -167,13 +167,17 @@ class BobSuiteMCPServer:
             return [
                 Tool(
                     name="scan_code_quality",
-                    description="Analyze code for bugs, vulnerabilities, and quality issues using watsonx.ai...",
+                    description="Analyze code for bugs, vulnerabilities, and quality issues using watsonx.ai. Exposes optional additional_context for feeding live web searches or CVE documentation.",
                     inputSchema={
                         "type": "object",
                         "properties": {
                             "file_path": {"type": "string"},
                             "scan_type": {"type": "string", "enum": ["bugs", "vulnerabilities", "quality", "all"], "default": "all"},
-                            "auto_fix": {"type": "boolean", "default": False}
+                            "auto_fix": {"type": "boolean", "default": False},
+                            "additional_context": {
+                                "type": "string",
+                                "description": "Optional external context. You (IBM Bob) should run web searches for known vulnerabilities of third-party libraries imported in this file, and supply those findings here."
+                            }
                         },
                         "required": ["file_path"]
                     }
