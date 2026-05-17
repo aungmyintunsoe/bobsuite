@@ -266,12 +266,12 @@ class BobSuiteMCPServer:
                 ),
                 Tool(
                     name="map_dependencies",
-                    description="Generate a visual dependency chain diagram for a project.",
+                    description="Generate a visual dependency chain diagram for a project. AI should dynamically specify a relevant output_path (e.g. 'docs/visualizations/dependency_chain.md') so the user can preview it in VS Code. AI should remind the user to install the 'Markdown Preview Mermaid Support' extension and press Ctrl+Shift+V to view it.",
                     inputSchema={
                         "type": "object",
                         "properties": {
                             "project_path": {"type": "string"},
-                            "output_path": {"type": "string"},
+                            "output_path": {"type": "string", "description": "Dynamic path to save the .md file, e.g., 'docs/visualizations/dependencies.md'"},
                             "max_depth": {"type": "integer", "default": 3},
                             "include_external": {"type": "boolean", "default": False}
                         },
@@ -280,25 +280,25 @@ class BobSuiteMCPServer:
                 ),
                 Tool(
                     name="map_features",
-                    description="Generate a visual feature flow map of user journeys.",
+                    description="Generate a visual feature flow map of user journeys. AI should dynamically specify a relevant output_path (e.g. 'docs/visualizations/feature_flow.md') so the user can preview it in VS Code. AI should remind the user to install the 'Markdown Preview Mermaid Support' extension and press Ctrl+Shift+V to view it.",
                     inputSchema={
                         "type": "object",
                         "properties": {
                             "project_path": {"type": "string"},
                             "feature_name": {"type": "string"},
-                            "output_path": {"type": "string"}
+                            "output_path": {"type": "string", "description": "Dynamic path to save the .md file, e.g., 'docs/visualizations/features.md'"}
                         },
                         "required": ["project_path"]
                     }
                 ),
                 Tool(
                     name="map_concept",
-                    description="Generate a high-level project concept map.",
+                    description="Generate a high-level project concept map. AI should dynamically specify a relevant output_path (e.g. 'docs/visualizations/project_concept.md') so the user can preview it in VS Code. AI should remind the user to install the 'Markdown Preview Mermaid Support' extension and press Ctrl+Shift+V to view it.",
                     inputSchema={
                         "type": "object",
                         "properties": {
                             "project_path": {"type": "string"},
-                            "output_path": {"type": "string"}
+                            "output_path": {"type": "string", "description": "Dynamic path to save the .md file, e.g., 'docs/visualizations/concept.md'"}
                         },
                         "required": ["project_path"]
                     }

@@ -139,19 +139,52 @@ class VisualizerEngine:
             module_parts = module_parts[:-1]
         return ".".join(module_parts) if module_parts else "root"
 
+    # Maximum nodes before auto-chunking kicks in
+    MAX_DIAGRAM_NODES = 15
+
+    # Cluster color palette for overview and detail diagrams
+    CLUSTER_COLORS = [
+        {"fill": "#3b82f6", "stroke": "#2563eb", "label": "Blue"},
+        {"fill": "#8b5cf6", "stroke": "#7c3aed", "label": "Purple"},
+        {"fill": "#f97316", "stroke": "#ea580c", "label": "Orange"},
+        {"fill": "#10b981", "stroke": "#059669", "label": "Green"},
+        {"fill": "#f43f5e", "stroke": "#e11d48", "label": "Rose"},
+        {"fill": "#06b6d4", "stroke": "#0891b2", "label": "Cyan"},
+        {"fill": "#eab308", "stroke": "#ca8a04", "label": "Amber"},
+        {"fill": "#64748b", "stroke": "#475569", "label": "Slate"},
+    ]
+
+    THEME_CONFIG = (
+        "%%{init: {'theme': 'base', 'themeVariables': {"
+        " 'fontFamily': 'Inter, Segoe UI, sans-serif'"
+        "}}}%%"
+    )
+
     def _create_dependency_mermaid(self, dependencies: Dict[str, Any]) -> str:
-        # Color palette for layer subgraphs
-        layer_colors = {
-            "Root": {"fill": "#f8fafc", "stroke": "#cbd5e1", "text": "#334155"},
-            "lib": {"fill": "#f1f5f9", "stroke": "#94a3b8", "text": "#334155"},
-            "tests": {"fill": "#fdf2f8", "stroke": "#fbcfe8", "text": "#831843"},
-            "dataset_bob": {"fill": "#f0fdf4", "stroke": "#bbf7d0", "text": "#166534"},
+        """Route to single or chunked diagram based on module count."""
+        total_nodes = len(dependencies["modules"])
+        if total_nodes > self.MAX_DIAGRAM_NODES:
+            return self._create_chunked_dependency_diagrams(dependencies)
+        return self._create_single_dependency_mermaid(dependencies)
+
+    # ------------------------------------------------------------------ #
+    #                  SINGLE DIAGRAM (small projects)                    #
+    # ------------------------------------------------------------------ #
+
+    def _create_single_dependency_mermaid(self, dependencies: Dict[str, Any]) -> str:
+        """Generate a single dependency diagram for small projects."""
+
+        layer_styles = {
+            "Root":        {"fill": "#1e293b", "stroke": "#3b82f6", "text": "#e2e8f0"},
+            "lib":         {"fill": "#1a1a2e", "stroke": "#a78bfa", "text": "#e2e8f0"},
+            "tests":       {"fill": "#1c1917", "stroke": "#fb923c", "text": "#e2e8f0"},
+            "dataset_bob": {"fill": "#0f172a", "stroke": "#34d399", "text": "#e2e8f0"},
         }
-        default_layer = {"fill": "#ffffff", "stroke": "#e2e8f0", "text": "#1e293b"}
+        default_style = {"fill": "#1e1e2e", "stroke": "#64748b", "text": "#e2e8f0"}
 
-        lines = ["```mermaid", "%%{init: {'theme': 'default', 'themeVariables': { 'background': '#ffffff'}}}%%", "graph TD"]
+        lines = ["```mermaid", self.THEME_CONFIG, "graph TD"]
 
-        # Subgraph grouping
+        # Group modules into layer subgraphs
         subgraphs = defaultdict(list)
         for module_name in dependencies["modules"].keys():
             root_part = module_name.split('.')[0] if '.' in module_name else "Root"
@@ -159,44 +192,45 @@ class VisualizerEngine:
 
         for group, elements in subgraphs.items():
             label = group.upper().replace("_", " ")
-            lines.append(f"    subgraph {group} [🔹 {label}]")
+            lines.append(f"    subgraph {group} [{label}]")
             lines.append(f"    direction TB")
             for mod in elements:
                 safe_id = mod.replace(".", "_")
                 display_name = mod.split(".")[-1]
-                lines.append(f"        {safe_id}([🧩 {display_name}])")
+                lines.append(f"        {safe_id}([{display_name}])")
             lines.append("    end")
 
-        if dependencies["external"]:
-            lines.append("    subgraph External [📦 EXTERNAL PACKAGES]")
-            lines.append("    direction TB")
-            for ext in dependencies["external"]:
-                safe_id = f"ext_{ext.replace('.', '_')}"
-                lines.append(f"        {safe_id}[/{ext}\\]")
-            lines.append("    end")
+        # External packages — collapsed single node
+        ext_list = dependencies.get("external", [])
+        if ext_list:
+            ext_label = " | ".join(sorted(ext_list))
+            lines.append(f'    ext_deps[/"{ext_label}"\\]')
 
-        # Styled edges
+        # Internal edges
         added_edges = set()
+        ext_sources = set()
         for from_mod, to_mod, imp_type in dependencies["edges"]:
             from_id = from_mod.replace(".", "_")
-            if to_mod in dependencies["external"]:
-                to_id = f"ext_{to_mod.replace('.', '_')}"
-                style = "-.->|uses|"
+            if to_mod in ext_list:
+                ext_sources.add(from_id)
             else:
                 to_id = to_mod.replace(".", "_")
-                style = "-->|imports|"
+                edge_key = (from_id, to_id)
+                if edge_key not in added_edges and from_id != to_id:
+                    lines.append(f"    {from_id} --> {to_id}")
+                    added_edges.add(edge_key)
 
-            edge_key = (from_id, to_id)
-            if edge_key not in added_edges and from_id != to_id:
-                lines.append(f"    {from_id} {style} {to_id}")
-                added_edges.add(edge_key)
+        # External edges
+        if ext_list:
+            for src_id in sorted(ext_sources):
+                lines.append(f"    {src_id} -.-> ext_deps")
 
-        # Apply styles via classDefs
+        # Class definitions
         lines.append("")
-        lines.append("    classDef coreNode fill:#3b82f6,stroke:#1d4ed8,stroke-width:2px,color:#fff,rx:12")
-        lines.append("    classDef libNode fill:#8b5cf6,stroke:#6d28d9,stroke-width:2px,color:#fff,rx:12")
-        lines.append("    classDef testNode fill:#ec4899,stroke:#be185d,stroke-width:2px,color:#fff,rx:12")
-        lines.append("    classDef extNode fill:#10b981,stroke:#047857,stroke-width:2px,color:#fff,rx:8")
+        lines.append("    classDef coreNode fill:#3b82f6,stroke:#2563eb,stroke-width:2px,color:#fff,rx:10")
+        lines.append("    classDef libNode fill:#8b5cf6,stroke:#7c3aed,stroke-width:2px,color:#fff,rx:10")
+        lines.append("    classDef testNode fill:#f97316,stroke:#ea580c,stroke-width:2px,color:#fff,rx:10")
+        lines.append("    classDef extNode fill:#0d9488,stroke:#0f766e,stroke-width:2px,color:#fff,rx:6")
 
         for group, elements in subgraphs.items():
             cls = "coreNode" if group == "Root" else "testNode" if group == "tests" else "libNode"
@@ -204,18 +238,239 @@ class VisualizerEngine:
                 safe_id = mod.replace(".", "_")
                 lines.append(f"    class {safe_id} {cls}")
 
-        if dependencies["external"]:
-            for ext in dependencies["external"]:
-                safe_id = f"ext_{ext.replace('.', '_')}"
-                lines.append(f"    class {safe_id} extNode")
+        if ext_list:
+            lines.append("    class ext_deps extNode")
 
         # Subgraph styling
         lines.append("")
         for group in subgraphs.keys():
-            c = layer_colors.get(group, default_layer)
-            lines.append(f"    style {group} fill:{c['fill']},stroke:{c['stroke']},stroke-width:2px,color:{c['text']},rx:16")
-        if dependencies["external"]:
-            lines.append("    style External fill:#f0fdfa,stroke:#a7f3d0,stroke-width:2px,color:#065f46,rx:16")
+            s = layer_styles.get(group, default_style)
+            lines.append(f"    style {group} fill:{s['fill']},stroke:{s['stroke']},stroke-width:2px,color:{s['text']},rx:12")
+
+        # Link styles
+        internal_count = len(added_edges)
+        ext_edge_count = len(ext_sources)
+        if internal_count > 0:
+            internal_indices = ",".join(str(i) for i in range(internal_count))
+            lines.append(f"    linkStyle {internal_indices} stroke:#60a5fa,stroke-width:2px")
+        if ext_edge_count > 0:
+            ext_indices = ",".join(str(i) for i in range(internal_count, internal_count + ext_edge_count))
+            lines.append(f"    linkStyle {ext_indices} stroke:#2dd4bf,stroke-width:1.5px,stroke-dasharray:5")
+
+        lines.append("```")
+        return "\n".join(lines)
+
+    # ------------------------------------------------------------------ #
+    #               CHUNKED DIAGRAMS (large projects)                     #
+    # ------------------------------------------------------------------ #
+
+    def _get_cluster_key(self, mod_name: str) -> str:
+        """Map a module name to its cluster key (2nd-level grouping)."""
+        parts = mod_name.split('.')
+        if len(parts) >= 3:
+            return '.'.join(parts[:2])   # lib.qa_sentry.core -> lib.qa_sentry
+        elif len(parts) == 2:
+            return parts[0]              # lib.formatters -> lib
+        return "root"                    # server -> root
+
+    def _cluster_modules(self, modules: Dict[str, Any]) -> Dict[str, list]:
+        """Group modules into logical clusters by second-level package."""
+        clusters = defaultdict(list)
+        for mod_name in modules.keys():
+            clusters[self._get_cluster_key(mod_name)].append(mod_name)
+        return dict(clusters)
+
+    def _cluster_display_name(self, cluster_name: str) -> str:
+        """Convert a cluster key to a human-readable title."""
+        return cluster_name.replace(".", " › ").replace("_", " ").title()
+
+    def _create_chunked_dependency_diagrams(self, dependencies: Dict[str, Any]) -> str:
+        """Generate an overview + per-cluster detail diagrams for large codebases."""
+        clusters = self._cluster_modules(dependencies["modules"])
+        ext_list = dependencies.get("external", [])
+
+        # Assign a color to each cluster
+        sorted_cluster_names = sorted(clusters.keys())
+        cluster_color_map = {
+            name: self.CLUSTER_COLORS[i % len(self.CLUSTER_COLORS)]
+            for i, name in enumerate(sorted_cluster_names)
+        }
+
+        # ── OVERVIEW DIAGRAM ──────────────────────────────────────────
+        overview = self._create_overview_diagram(clusters, cluster_color_map, dependencies, ext_list)
+
+        # ── DETAIL DIAGRAMS ───────────────────────────────────────────
+        details = []
+        for cluster_name in sorted_cluster_names:
+            modules = clusters[cluster_name]
+            if len(modules) <= 1:
+                continue  # Single-module clusters don't need a detail view
+            detail = self._create_cluster_detail_diagram(
+                cluster_name, modules, dependencies, cluster_color_map, ext_list
+            )
+            details.append((cluster_name, detail))
+
+        # ── COMBINE ──────────────────────────────────────────────────
+        parts = [
+            "### 🔭 High-Level Overview",
+            "",
+            f"> *{len(clusters)} clusters identified — {len(dependencies['modules'])} total modules*",
+            "",
+            overview,
+        ]
+        for name, diagram in details:
+            display = self._cluster_display_name(name)
+            count = len(clusters[name])
+            parts.append("")
+            parts.append(f"### 🔍 {display} — {count} modules")
+            parts.append("")
+            parts.append(diagram)
+
+        return "\n".join(parts)
+
+    def _create_overview_diagram(self, clusters, cluster_color_map, dependencies, ext_list) -> str:
+        """Generate a high-level overview with one node per cluster."""
+        lines = ["```mermaid", self.THEME_CONFIG, "graph TD"]
+
+        # One node per cluster
+        cluster_ids = {}
+        for cluster_name in sorted(clusters.keys()):
+            safe_id = "c_" + cluster_name.replace(".", "_").replace(" ", "_")
+            count = len(clusters[cluster_name])
+            display = self._cluster_display_name(cluster_name)
+            lines.append(f"    {safe_id}([{display}<br/>{count} modules])")
+            cluster_ids[cluster_name] = safe_id
+
+        # External deps summary node
+        if ext_list:
+            lines.append(f'    ext_deps[/"{len(ext_list)} External Packages"\\]')
+
+        # Inter-cluster edges (deduplicated)
+        cross_edges = set()
+        ext_clusters = set()
+        for from_mod, to_mod, _ in dependencies["edges"]:
+            from_cluster = self._get_cluster_key(from_mod)
+            if to_mod in ext_list:
+                ext_clusters.add(from_cluster)
+            else:
+                to_cluster = self._get_cluster_key(to_mod)
+                if from_cluster != to_cluster:
+                    from_id = cluster_ids.get(from_cluster)
+                    to_id = cluster_ids.get(to_cluster)
+                    if from_id and to_id:
+                        edge = (from_id, to_id)
+                        if edge not in cross_edges:
+                            lines.append(f"    {from_id} --> {to_id}")
+                            cross_edges.add(edge)
+
+        # External edges
+        if ext_list:
+            for cluster_name in sorted(ext_clusters):
+                cid = cluster_ids.get(cluster_name)
+                if cid:
+                    lines.append(f"    {cid} -.-> ext_deps")
+
+        # classDefs — each cluster gets its assigned color
+        lines.append("")
+        for cluster_name, color in cluster_color_map.items():
+            safe_id = cluster_ids[cluster_name]
+            lines.append(f"    classDef cls_{safe_id} fill:{color['fill']},stroke:{color['stroke']},stroke-width:2px,color:#fff,rx:12")
+            lines.append(f"    class {safe_id} cls_{safe_id}")
+        lines.append("    classDef extNode fill:#0d9488,stroke:#0f766e,stroke-width:2px,color:#fff,rx:8")
+        if ext_list:
+            lines.append("    class ext_deps extNode")
+
+        # Link styles
+        internal_edge_count = len(cross_edges)
+        ext_edge_count = len(ext_clusters) if ext_list else 0
+        if internal_edge_count > 0:
+            indices = ",".join(str(i) for i in range(internal_edge_count))
+            lines.append(f"    linkStyle {indices} stroke:#60a5fa,stroke-width:2px")
+        if ext_edge_count > 0:
+            ext_indices = ",".join(str(i) for i in range(internal_edge_count, internal_edge_count + ext_edge_count))
+            lines.append(f"    linkStyle {ext_indices} stroke:#2dd4bf,stroke-width:1.5px,stroke-dasharray:5")
+
+        lines.append("```")
+        return "\n".join(lines)
+
+    def _create_cluster_detail_diagram(self, cluster_name, modules, dependencies, cluster_color_map, ext_list) -> str:
+        """Generate a focused diagram for a single cluster with cross-cluster stubs."""
+        color = cluster_color_map.get(cluster_name, self.CLUSTER_COLORS[0])
+        display = self._cluster_display_name(cluster_name)
+        sg_id = "sg_" + cluster_name.replace(".", "_")
+
+        lines = ["```mermaid", self.THEME_CONFIG, "graph TD"]
+
+        # Cluster subgraph with internal modules
+        lines.append(f"    subgraph {sg_id} [{display}]")
+        lines.append("    direction TB")
+
+        module_set = set(modules)
+        for mod in sorted(modules):
+            safe_id = mod.replace(".", "_")
+            short_name = mod.split(".")[-1]
+            lines.append(f"        {safe_id}([{short_name}])")
+        lines.append("    end")
+
+        # Internal edges (within this cluster) — deduplicated
+        internal_edge_count = 0
+        added_internal = set()
+        cross_cluster_refs = set()
+        for from_mod, to_mod, _ in dependencies["edges"]:
+            if from_mod in module_set:
+                from_id = from_mod.replace(".", "_")
+                if to_mod in module_set:
+                    to_id = to_mod.replace(".", "_")
+                    edge_key = (from_id, to_id)
+                    if from_id != to_id and edge_key not in added_internal:
+                        lines.append(f"    {from_id} --> {to_id}")
+                        added_internal.add(edge_key)
+                        internal_edge_count += 1
+                elif to_mod not in ext_list:
+                    to_cluster = self._get_cluster_key(to_mod)
+                    if to_cluster != cluster_name:
+                        cross_cluster_refs.add(to_cluster)
+
+        # Stub nodes for referenced external clusters
+        cross_edge_count = 0
+        if cross_cluster_refs:
+            lines.append("")
+            cross_edges_added = set()
+            for ref_cluster in sorted(cross_cluster_refs):
+                ref_id = "ref_" + ref_cluster.replace(".", "_")
+                ref_display = self._cluster_display_name(ref_cluster)
+                ref_color = cluster_color_map.get(ref_cluster, self.CLUSTER_COLORS[-1])
+                lines.append(f"    {ref_id}[{ref_display}]")
+                lines.append(f"    style {ref_id} fill:{ref_color['fill']},stroke:{ref_color['stroke']},stroke-width:2px,color:#fff,rx:8,stroke-dasharray:5")
+
+            for from_mod, to_mod, _ in dependencies["edges"]:
+                if from_mod in module_set and to_mod not in module_set and to_mod not in ext_list:
+                    to_cluster = self._get_cluster_key(to_mod)
+                    if to_cluster in cross_cluster_refs:
+                        from_id = from_mod.replace(".", "_")
+                        to_id = "ref_" + to_cluster.replace(".", "_")
+                        edge_key = (from_id, to_id)
+                        if edge_key not in cross_edges_added:
+                            lines.append(f"    {from_id} -.-> {to_id}")
+                            cross_edges_added.add(edge_key)
+                            cross_edge_count += 1
+
+        # classDefs
+        lines.append("")
+        lines.append(f"    classDef clusterNode fill:{color['fill']},stroke:{color['stroke']},stroke-width:2px,color:#fff,rx:10")
+        for mod in modules:
+            lines.append(f"    class {mod.replace('.', '_')} clusterNode")
+
+        # Subgraph panel styling
+        lines.append(f"    style {sg_id} fill:{color['fill']}22,stroke:{color['stroke']},stroke-width:2px,color:#e2e8f0,rx:12")
+
+        # Link styles
+        if internal_edge_count > 0:
+            indices = ",".join(str(i) for i in range(internal_edge_count))
+            lines.append(f"    linkStyle {indices} stroke:{color['stroke']},stroke-width:2px")
+        if cross_edge_count > 0:
+            cross_indices = ",".join(str(i) for i in range(internal_edge_count, internal_edge_count + cross_edge_count))
+            lines.append(f"    linkStyle {cross_indices} stroke:#94a3b8,stroke-width:1.5px,stroke-dasharray:5")
 
         lines.append("```")
         return "\n".join(lines)
@@ -258,7 +513,24 @@ class VisualizerEngine:
             return self._create_basic_feature_analysis(target_path)
 
     def _create_feature_flow_mermaid(self, analysis: Dict[str, Any]) -> str:
-        lines = ["```mermaid", "%%{init: {'theme': 'default', 'themeVariables': { 'background': '#ffffff'}}}%%", "sequenceDiagram", "    autonumber"]
+        """Generate a clean sequence diagram using base theme for VS Code compatibility."""
+        theme_config = (
+            "%%{init: {'theme': 'base', 'themeVariables': {"
+            " 'actorBkg': '#3b82f6',"
+            " 'actorBorder': '#2563eb',"
+            " 'actorTextColor': '#fff',"
+            " 'actorLineColor': '#94a3b8',"
+            " 'noteBkgColor': '#f1f5f9',"
+            " 'noteTextColor': '#1e293b',"
+            " 'noteBorderColor': '#3b82f6',"
+            " 'activationBkgColor': '#dbeafe',"
+            " 'activationBorderColor': '#60a5fa',"
+            " 'signalColor': '#334155',"
+            " 'signalTextColor': '#1e293b',"
+            " 'fontFamily': 'Inter, Segoe UI, sans-serif'"
+            "}}}%%"
+        )
+        lines = ["```mermaid", theme_config, "sequenceDiagram", "    autonumber"]
         participants = set()
 
         # 1. Collect all participant names
@@ -278,34 +550,37 @@ class VisualizerEngine:
         for actor in sorted_parts:
             sid = safe_map[actor]
             if actor.lower() == "user":
-                lines.append(f'    actor {sid} as 👤 {actor}')
+                lines.append(f'    actor {sid} as User')
             else:
-                # Shorten display: lib/qa_sentry/core.py → qa_sentry/core
+                # Shorten display: lib/qa_sentry/core.py -> qa_sentry/core
                 short = actor.replace("lib/", "").replace(".py", "")
                 lines.append(f'    participant {sid} as {short}')
 
-        # 4. Feature workflow sections
-        feat_colors = ["rgb(59,130,246,0.1)", "rgb(139,92,246,0.1)", "rgb(236,72,153,0.1)", "rgb(16,185,129,0.1)"]
+        # 4. Feature workflow sections — deeper color rects
+        feat_colors = [
+            "rgb(59,130,246,0.15)",
+            "rgb(139,92,246,0.15)",
+            "rgb(236,72,153,0.12)",
+            "rgb(16,185,129,0.12)"
+        ]
         for idx, feature in enumerate(analysis.get("features", [])):
             color = feat_colors[idx % len(feat_colors)]
             feat_name = str(feature.get("name", "Feature")).replace(":", " -")
-            clean_desc = str(feature.get("description", "")).replace("\n", " ").replace(":", " -")[:80]
 
-            lines.append(f"")
+            lines.append("")
             lines.append(f"    rect {color}")
-            lines.append(f"    Note right of {safe_map[sorted_parts[0]]}: 🔷 {feat_name}")
+            lines.append(f"    Note right of {safe_map[sorted_parts[0]]}: {feat_name}")
 
             steps = feature.get("flow_steps", [])
-            for i, step in enumerate(steps):
+            for step in steps:
                 actor = safe_map.get(step.get("actor", "System"), "p_0")
                 target = safe_map.get(step.get("target", "System"), "p_0")
                 action = str(step.get("action", "process")).replace(":", " -")
-                # Use a meaningful return instead of generic "Status Confirm"
-                response = str(step.get("response", "✓ done")).replace(":", " -")
+                response = str(step.get("response", "done")).replace(":", " -")
                 lines.append(f"    {actor}->>+{target}: {action}")
                 lines.append(f"    {target}-->>-{actor}: {response}")
 
-            lines.append(f"    end")
+            lines.append("    end")
 
         lines.append("```")
         return "\n".join(lines)
@@ -348,62 +623,56 @@ class VisualizerEngine:
             return self._create_basic_concept(target_path)
 
     def _create_concept_mermaid(self, concept: Dict[str, Any]) -> str:
-        lines = ["```mermaid", "%%{init: {'theme': 'default', 'themeVariables': { 'background': '#ffffff'}}}%%", "graph LR"]
+        """Generate a clean concept map using base theme for VS Code compatibility."""
+        theme_config = (
+            "%%{init: {'theme': 'base', 'themeVariables': {"
+            " 'fontFamily': 'Inter, Segoe UI, sans-serif'"
+            "}}}%%"
+        )
+        lines = ["```mermaid", theme_config, "graph LR"]
 
-        # Rich class definitions with gradients and rounded corners
-        lines.append("    classDef ui fill:#3b82f6,stroke:#1d4ed8,stroke-width:3px,color:#fff,rx:12")
-        lines.append("    classDef server fill:#8b5cf6,stroke:#6d28d9,stroke-width:3px,color:#fff,rx:12")
-        lines.append("    classDef engine fill:#f59e0b,stroke:#d97706,stroke-width:3px,color:#fff,rx:12")
-        lines.append("    classDef database fill:#10b981,stroke:#047857,stroke-width:3px,color:#fff,rx:12")
-        lines.append("    classDef external fill:#ef4444,stroke:#b91c1c,stroke-width:2px,color:#fff,rx:8")
+        # Class definitions — vibrant fills on dark background
+        lines.append("    classDef ui fill:#3b82f6,stroke:#2563eb,stroke-width:2px,color:#fff,rx:10")
+        lines.append("    classDef server fill:#8b5cf6,stroke:#7c3aed,stroke-width:2px,color:#fff,rx:10")
+        lines.append("    classDef engine fill:#f59e0b,stroke:#d97706,stroke-width:2px,color:#fff,rx:10")
+        lines.append("    classDef database fill:#10b981,stroke:#059669,stroke-width:2px,color:#fff,rx:10")
+        lines.append("    classDef external fill:#ef4444,stroke:#dc2626,stroke-width:2px,color:#fff,rx:8")
+        lines.append("    classDef defaultNode fill:#64748b,stroke:#475569,stroke-width:2px,color:#fff,rx:10")
         lines.append("")
-
-        # Type → emoji mapping
-        type_emoji = {
-            "database": "🗄️", "db": "🗄️", "storage": "🗄️",
-            "ui": "🖥️", "frontend": "🖥️", "client": "🖥️",
-            "server": "⚙️", "api": "⚙️", "backend": "⚙️",
-            "engine": "🔥", "core": "🔥", "processor": "🔥",
-        }
 
         # Internal components subgraph
         components = [c for c in concept.get("components", []) if isinstance(c, dict)]
         if components:
-            lines.append("    subgraph core [🏗️ System Architecture]")
+            lines.append("    subgraph core [System Architecture]")
             lines.append("    direction TB")
 
             for comp in components:
                 comp_name = str(comp.get("name", "Unknown"))
                 comp_id = comp_name.replace(" ", "_").replace(".", "_").replace("/", "_")
                 comp_type = str(comp.get("type", "component")).lower()
-                desc = str(comp.get("description", ""))[:50]
 
-                # Pick emoji based on type keywords
-                emoji = "📦"
-                for key, em in type_emoji.items():
-                    if key in comp_type:
-                        emoji = em
-                        break
-
-                # Node shape based on type
+                # Node shape and class based on type — no emoji
                 if any(k in comp_type for k in ("database", "db", "storage")):
-                    lines.append(f"        {comp_id}[({emoji} {comp_name})]")
+                    lines.append(f"        {comp_id}[({comp_name})]")
                     lines.append(f"        class {comp_id} database")
                 elif any(k in comp_type for k in ("ui", "frontend", "client")):
-                    lines.append(f"        {comp_id}[/{emoji} {comp_name}\\]")
+                    lines.append(f"        {comp_id}[/{comp_name}\\]")
                     lines.append(f"        class {comp_id} ui")
                 elif any(k in comp_type for k in ("engine", "core", "processor")):
-                    lines.append(f"        {comp_id}([{emoji} {comp_name}])")
+                    lines.append(f"        {comp_id}([{comp_name}])")
                     lines.append(f"        class {comp_id} engine")
+                elif any(k in comp_type for k in ("server", "api", "backend")):
+                    lines.append(f"        {comp_id}([{comp_name}])")
+                    lines.append(f"        class {comp_id} server")
                 else:
-                    lines.append(f"        {comp_id}([{emoji} {comp_name}])")
-                    if any(k in comp_type for k in ("server", "api", "backend")):
-                        lines.append(f"        class {comp_id} server")
+                    lines.append(f"        {comp_id}([{comp_name}])")
+                    lines.append(f"        class {comp_id} defaultNode")
 
             lines.append("    end")
             lines.append("")
 
-        # Connection edges with thick styled arrows
+        # Connection edges — thick arrows, no labels
+        edge_count = 0
         for comp in components:
             comp_name = str(comp.get("name", "Unknown"))
             comp_id = comp_name.replace(" ", "_").replace(".", "_").replace("/", "_")
@@ -411,28 +680,34 @@ class VisualizerEngine:
                 if isinstance(target, dict):
                     target = str(target.get("name", target.get("target", "Unknown")))
                 target_id = str(target).replace(" ", "_").replace(".", "_").replace("/", "_")
-                lines.append(f"    {comp_id} ==>|connects| {target_id}")
+                lines.append(f"    {comp_id} ==> {target_id}")
+                edge_count += 1
 
         # External services subgraph
         ext_services = concept.get("external_services", [])
         if ext_services:
             lines.append("")
-            lines.append("    subgraph ext [🌐 External Services]")
+            lines.append("    subgraph ext [External Services]")
             lines.append("    direction TB")
             for service in ext_services:
                 if isinstance(service, dict):
                     service = str(service.get("name", service.get("service", "External")))
                 service_str = str(service)
                 safe_id = service_str.replace(" ", "_").replace(".", "_").replace("/", "_")
-                lines.append(f"        ext_{safe_id}{{{{🔗 {service_str}}}}}")
+                lines.append(f"        ext_{safe_id}{{{{{service_str}}}}}")
                 lines.append(f"        class ext_{safe_id} external")
             lines.append("    end")
 
-        # Subgraph styling
+        # Subgraph styling — dark panels
         lines.append("")
-        lines.append("    style core fill:#f8fafc,stroke:#94a3b8,stroke-width:2px,color:#334155,rx:16")
+        lines.append("    style core fill:#1e293b,stroke:#3b82f6,stroke-width:2px,color:#e2e8f0,rx:12")
         if ext_services:
-            lines.append("    style ext fill:#fef2f2,stroke:#fca5a5,stroke-width:2px,color:#991b1b,rx:16")
+            lines.append("    style ext fill:#1c1917,stroke:#ef4444,stroke-width:2px,color:#e2e8f0,rx:12")
+
+        # Link styles — thick colored arrows
+        if edge_count > 0:
+            indices = ",".join(str(i) for i in range(edge_count))
+            lines.append(f"    linkStyle {indices} stroke:#60a5fa,stroke-width:3px")
 
         lines.append("```")
         return "\n".join(lines)
@@ -445,6 +720,7 @@ class VisualizerEngine:
         total_mods = len(dependencies["modules"])
         total_deps = len(dependencies["edges"])
         total_ext = len(dependencies["external"])
+        is_chunked = total_mods > self.MAX_DIAGRAM_NODES
 
         # Group modules by layer
         layers = defaultdict(list)
@@ -464,6 +740,13 @@ class VisualizerEngine:
             f"| Internal Dependencies | **{total_deps - total_ext}** |",
             f"| External Packages | **{total_ext}** |",
             f"| Architecture Layers | **{len(layers)}** |",
+        ]
+
+        if is_chunked:
+            clusters = self._cluster_modules(dependencies["modules"])
+            parts.append(f"| Diagram Sections | **{len(clusters) + 1}** (1 overview + {len(clusters)} details) |")
+
+        parts.extend([
             "",
             "## 🏗️ Architecture Diagram",
             "",
@@ -471,18 +754,34 @@ class VisualizerEngine:
             "",
             "## 🎨 Legend",
             "",
-            "| Color | Layer |",
-            "|-------|-------|",
-            "| 🔵 Blue | Core entry points |",
-            "| 🟣 Purple | Library modules |",
-            "| 🩷 Pink | Test suites |",
-            "| 🟢 Green | External packages |",
-            "",
-            "## 📁 Module Reference",
-            "",
-            "| Module | Source Path |",
-            "|--------|------------|",
-        ]
+        ])
+
+        if is_chunked:
+            # Dynamic legend based on cluster colors
+            clusters = self._cluster_modules(dependencies["modules"])
+            sorted_names = sorted(clusters.keys())
+            parts.append("| Color | Cluster | Modules |")
+            parts.append("|-------|---------|---------|")
+            for i, name in enumerate(sorted_names):
+                color = self.CLUSTER_COLORS[i % len(self.CLUSTER_COLORS)]
+                display = self._cluster_display_name(name)
+                count = len(clusters[name])
+                parts.append(f"| {color['label']} | {display} | {count} |")
+            parts.append(f"| Teal | External packages | {total_ext} |")
+            parts.append(f"| ⬜ Dashed border | Cross-cluster reference (stub) | — |")
+        else:
+            parts.append("| Color | Layer |")
+            parts.append("|-------|-------|")
+            parts.append("| 🔵 Blue | Core entry points |")
+            parts.append("| 🟣 Purple | Library modules |")
+            parts.append("| 🟠 Orange | Test suites |")
+            parts.append("| 🟢 Teal | External packages |")
+
+        parts.append("")
+        parts.append("## 📁 Module Reference")
+        parts.append("")
+        parts.append("| Module | Source Path |")
+        parts.append("|--------|------------|")
         for m, p in sorted(dependencies["modules"].items()):
             parts.append(f"| `{m}` | `{p}` |")
 

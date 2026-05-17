@@ -134,7 +134,10 @@ def _append_unit_specific_sections(response_parts: List[str], result: Dict[str, 
 
 def format_visualizer_result(result: Dict[str, Any]) -> str:
     """
-    Format visualizer engine results with markdown and file paths.
+    Format visualizer engine results for MCP response.
+    
+    Primary: Direct user to open saved .md file in VS Code Markdown Preview.
+    Fallback: Include raw Mermaid code for inline AI rendering.
     
     Args:
         result: Visualizer result dictionary
@@ -142,13 +145,42 @@ def format_visualizer_result(result: Dict[str, Any]) -> str:
     Returns:
         Formatted markdown string
     """
-    response = "✅ **Visualization successfully generated!**\n"
+    diagram_type = result.get("diagram_type", "visualization").replace("_", " ").title()
+    response = f"✅ **{diagram_type} generated successfully!**\n\n"
+
+    # Include stats if available
+    if stats := result.get("stats"):
+        response += "### 📊 Stats\n\n"
+        response += "| Metric | Value |\n|--------|-------|\n"
+        for key, val in stats.items():
+            label = key.replace("_", " ").title()
+            response += f"| {label} | **{val}** |\n"
+        response += "\n"
+    elif features := result.get("features_analyzed"):
+        response += f"**Features analyzed:** {features}\n\n"
+    elif components := result.get("components"):
+        response += f"**Components identified:** {components}\n\n"
     
     if saved_to := result.get("saved_to"):
-        response += f"**Saved full markdown document to:** `{saved_to}`\n\n"
+        response += "---\n\n"
+        response += "### 📂 View Your Diagram\n\n"
+        response += f"**File saved to:** `{saved_to}`\n\n"
+        response += "**To view the rendered diagram:**\n"
+        response += "1. Open the file in VS Code\n"
+        response += "2. Press `Ctrl+Shift+V` (or `Cmd+Shift+V` on Mac) to open Markdown Preview\n"
+        response += "3. The Mermaid diagram will render automatically\n\n"
+        response += "> 💡 **First time?** You need to install the **[Markdown Preview Mermaid Support](https://marketplace.visualstudio.com/items?itemName=bierner.markdown-mermaid)** extension by Matt Bierner in VS Code for the diagrams to render.\n\n"
         
-    response += "⚠️ **AI INSTRUCTION:** Immediately render the following Mermaid code block in your response so the user can see the diagram natively:\n\n"
-    response += result.get("mermaid", "")
+        # Fallback for file-saved mode
+        response += "---\n\n"
+        response += "<details>\n<summary>📋 Raw Mermaid (click to expand — fallback if file preview unavailable)</summary>\n\n"
+        response += "⚠️ **AI INSTRUCTION:** Only render this Mermaid code block if the user explicitly asks for inline rendering or cannot open the saved file:\n\n"
+        response += result.get("mermaid", "")
+        response += "\n\n</details>"
+    else:
+        # If no file was saved, render the Mermaid block directly
+        response += "⚠️ **AI INSTRUCTION:** Immediately render the following Mermaid code block in your response so the user can see the diagram natively:\n\n"
+        response += result.get("mermaid", "")
     
     return response
 
