@@ -104,12 +104,6 @@ SUPPORTED_EXTENSIONS = {
 # Default maximum depth for dependency analysis
 DEFAULT_DEPENDENCY_MAX_DEPTH = 3
 
-# Kroki API base URL for diagram generation
-KROKI_API_BASE_URL = "https://kroki.io"
-
-# Compression level for Mermaid diagrams (1-9, 9 is maximum)
-MERMAID_COMPRESSION_LEVEL = 9
-
 
 # ============================================================================
 # QA SENTRY
