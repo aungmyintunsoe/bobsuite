@@ -1,10 +1,10 @@
 {
   "mcpServers": {
     "bobsuite": {
-      "command": "python",
+      "command": "python3",
       "args": [
         "-u",
-        "d:/ibmbobhack/mcp_server/server.py"
+        "/Users/thirimoetheint/bobSuite/bobsuite/mcp_server/server.py"
       ],
       "env": {
         "PYTHONUNBUFFERED": "1"

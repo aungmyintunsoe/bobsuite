@@ -79,3 +79,11 @@
 2026-05-17 19:57:37 [INFO] ideation-engine: BobSuite MCP Server initialized successfully
 2026-05-17 19:57:37 [INFO] ideation-engine: Starting MCP server with stdio transport
 2026-05-17 19:57:37 [INFO] ideation-engine: MCP server running and ready to accept requests
+2026-05-17 20:15:35 [INFO] ideation-engine: ============================================================
+2026-05-17 20:15:35 [INFO] ideation-engine: BobSuite MCP Server Starting
+2026-05-17 20:15:35 [INFO] ideation-engine: ============================================================
+2026-05-17 20:15:35 [INFO] ideation-engine: Initializing BobSuite MCP Server
+2026-05-17 20:15:35 [INFO] ideation-engine: Initializing Ideation Engine
+2026-05-17 20:15:35 [INFO] ideation-engine: BobSuite MCP Server initialized successfully
+2026-05-17 20:15:35 [INFO] ideation-engine: Starting MCP server with stdio transport
+2026-05-17 20:15:35 [INFO] ideation-engine: MCP server running and ready to accept requests
