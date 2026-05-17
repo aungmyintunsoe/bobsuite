@@ -114,9 +114,14 @@ def _format_structured_conversation(conversation_data: Dict[str, Any]) -> str:
     for pillar_name, pillar_data in pillars.items():
         formatted_parts.append(f"## {pillar_name}")
         if isinstance(pillar_data, dict):
+            # Handle nested dictionary structure
             for key, value in pillar_data.items():
                 formatted_parts.append(f"**{key}:** {value}")
+        elif isinstance(pillar_data, str):
+            # Handle simple string values
+            formatted_parts.append(pillar_data)
         else:
+            # Handle any other type
             formatted_parts.append(str(pillar_data))
         formatted_parts.append("")
     

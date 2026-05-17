@@ -83,13 +83,17 @@ MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024
 # Default encoding for file operations
 DEFAULT_FILE_ENCODING = 'utf-8'
 
-# Supported file extensions for code analysis
+# Supported file extensions for code analysis (maps extension to language name)
 SUPPORTED_EXTENSIONS = {
-    '.py', '.js', '.ts', '.jsx', '.tsx', '.java', '.cpp', '.c', '.h', '.hpp',
-    '.cs', '.go', '.rs', '.rb', '.php', '.swift', '.kt', '.scala', '.r',
-    '.m', '.mm', '.sh', '.bash', '.zsh', '.ps1', '.sql', '.html', '.css',
-    '.scss', '.sass', '.less', '.vue', '.svelte', '.json', '.yaml', '.yml',
-    '.xml', '.md', '.txt', '.toml', '.ini', '.cfg', '.conf'
+    '.py': 'Python', '.js': 'JavaScript', '.ts': 'TypeScript', '.jsx': 'JavaScript',
+    '.tsx': 'TypeScript', '.java': 'Java', '.cpp': 'C++', '.c': 'C', '.h': 'C',
+    '.hpp': 'C++', '.cs': 'C#', '.go': 'Go', '.rs': 'Rust', '.rb': 'Ruby',
+    '.php': 'PHP', '.swift': 'Swift', '.kt': 'Kotlin', '.scala': 'Scala', '.r': 'R',
+    '.m': 'Objective-C', '.mm': 'Objective-C++', '.sh': 'Shell', '.bash': 'Bash',
+    '.zsh': 'Zsh', '.ps1': 'PowerShell', '.sql': 'SQL', '.html': 'HTML', '.css': 'CSS',
+    '.scss': 'SCSS', '.sass': 'Sass', '.less': 'Less', '.vue': 'Vue', '.svelte': 'Svelte',
+    '.json': 'JSON', '.yaml': 'YAML', '.yml': 'YAML', '.xml': 'XML', '.md': 'Markdown',
+    '.txt': 'Text', '.toml': 'TOML', '.ini': 'INI', '.cfg': 'Config', '.conf': 'Config'
 }
 
 

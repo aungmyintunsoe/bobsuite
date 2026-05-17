@@ -1,0 +1,17 @@
+{
+  "timestamp": "2026-05-17T15:44:37.978368",
+  "result": {
+    "success": true,
+    "file_path": "mcp_server/lib/qa_sentry/chunking.py",
+    "language": "Python",
+    "scan_type": "all",
+    "timestamp": "2026-05-17T07:44:37.978338Z",
+    "summary": {
+      "health_score": 50,
+      "risk_level": "MEDIUM",
+      "executive_summary": "JSON parsing error in Finder pass: Expecting value: line 23 column 1047 (char 7710)"
+    },
+    "findings": [],
+    "lines_analyzed": 166
+  }
+}

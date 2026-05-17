@@ -1,9 +1,1 @@
-{
-  "mcpServers": {
-    "bobsuite": {
-      "command": "python",
-      "args": ["d:/bobsuite/mcp_server/server.py"],
-      "env": {"PYTHONPATH": "d:/bobsuite/mcp_server"}
-    }
-  }
-}
+{"mcpServers":{"bobsuite":{"command":"python","args":["d:/bobsuite/mcp_server/server.py"],"env":{"PYTHONPATH":"d:/bobsuite/mcp_server"},"alwaysAllow":[]}}}

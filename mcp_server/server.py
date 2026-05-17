@@ -6,6 +6,7 @@ Provides tools for code quality analysis and documentation generation, powered b
 import asyncio
 import json
 import sys
+import traceback
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -20,20 +21,30 @@ from lib.autodocs import AutoDocs
 from lib.ideation import IdeationEngine
 from lib.visualizer import VisualizerEngine
 from lib.formatters import format_test_generation_response, format_visualizer_result
+from lib.utils.logging import get_logger
+
+# Initialize logger
+logger = get_logger("bobsuite-mcp-server")
 
 
 class BobSuiteMCPServer:
     """Main MCP Server class integrating all BobSuite tools"""
     
     def __init__(self):
-        self.server = Server("bobsuite-mcp")
-        self.watsonx = WatsonxClient()
-        self.qa_sentry = QASentry(self.watsonx)
-        self.autodocs = AutoDocs(self.watsonx)
-        self.ideation_engine = IdeationEngine(self.watsonx)
-        self.visualizer = VisualizerEngine(self.watsonx)
-        
-        self._register_handlers()
+        logger.info("Initializing BobSuite MCP Server")
+        try:
+            self.server = Server("bobsuite-mcp")
+            self.watsonx = WatsonxClient()
+            self.qa_sentry = QASentry(self.watsonx)
+            self.autodocs = AutoDocs(self.watsonx)
+            self.ideation_engine = IdeationEngine(self.watsonx)
+            self.visualizer = VisualizerEngine(self.watsonx)
+            
+            self._register_handlers()
+            logger.info("BobSuite MCP Server initialized successfully")
+        except Exception as e:
+            logger.exception("Failed to initialize BobSuite MCP Server")
+            raise
 
     # ------------------------------------------------------------------ #
     #                      HELPER METHODS                                #
@@ -72,13 +83,19 @@ class BobSuiteMCPServer:
     async def _handle_scan_code_quality(self, args: Dict[str, Any]) -> List[TextContent]:
         if err := self._require_args(args, ["file_path"]): return err
         
-        result = await self.qa_sentry.scan_code(
-            file_path=args["file_path"],
-            scan_type=args.get("scan_type", "all"),
-            auto_fix=args.get("auto_fix", False),
-            additional_context=args.get("additional_context")
-        )
-        return self._success_response(self.qa_sentry.generate_report([result]))
+        logger.info("Scanning code quality", file_path=args["file_path"], scan_type=args.get("scan_type", "all"))
+        try:
+            result = await self.qa_sentry.scan_code(
+                file_path=args["file_path"],
+                scan_type=args.get("scan_type", "all"),
+                auto_fix=args.get("auto_fix", False),
+                additional_context=args.get("additional_context")
+            )
+            logger.info("Code quality scan completed successfully", file_path=args["file_path"])
+            return self._success_response(self.qa_sentry.generate_report([result]))
+        except Exception as e:
+            logger.exception("Code quality scan failed", file_path=args["file_path"])
+            raise
 
     async def _handle_generate_docs(self, args: Dict[str, Any]) -> List[TextContent]:
         if err := self._require_args(args, ["file_path"]): return err
@@ -94,7 +111,9 @@ class BobSuiteMCPServer:
         
         result = await self.qa_sentry.scan_git_diff(
             repo_path=args["repo_path"],
-            staged=args.get("staged", True)
+            staged=args.get("staged", True),
+            max_files=args.get("max_files", 10),
+            max_file_size_kb=args.get("max_file_size_kb", 500)
         )
         return self._success_response(json.dumps(result, indent=2))
 
@@ -105,20 +124,27 @@ class BobSuiteMCPServer:
     async def _handle_synthesize_plan(self, args: Dict[str, Any]) -> List[TextContent]:
         if err := self._require_args(args, ["conversation_data"]): return err
         
-        result = await self.ideation_engine.synthesize_prd(
-            conversation_data=args["conversation_data"],
-            project_name=args.get("project_name"),
-            output_path=args.get("output_path")
-        )
-        
-        if not result.get("success"):
-            return self._success_response(json.dumps(result, indent=2))
+        logger.info("Synthesizing project plan", project_name=args.get("project_name", "unnamed"))
+        try:
+            result = await self.ideation_engine.synthesize_prd(
+                conversation_data=args["conversation_data"],
+                project_name=args.get("project_name"),
+                output_path=args.get("output_path")
+            )
             
-        text = f"{result['prd_markdown']}\n\n---\n\n**Generated:** {result['metadata']['generated_at']}\n"
-        if file_path := result.get('file_path'):
-            text += f"**Saved to:** `{file_path}`\n"
-            
-        return self._success_response(text)
+            if not result.get("success"):
+                logger.warning("PRD synthesis returned unsuccessful result")
+                return self._success_response(json.dumps(result, indent=2))
+                
+            logger.info("PRD synthesis completed successfully", project_name=args.get("project_name", "unnamed"))
+            text = f"{result['prd_markdown']}\n\n---\n\n**Generated:** {result['metadata']['generated_at']}\n"
+            if file_path := result.get('file_path'):
+                text += f"**Saved to:** `{file_path}`\n"
+                
+            return self._success_response(text)
+        except Exception as e:
+            logger.exception("PRD synthesis failed", project_name=args.get("project_name", "unnamed"))
+            raise
 
     async def _handle_dependency_chain(self, args: Dict[str, Any]) -> List[TextContent]:
         if err := self._require_args(args, ["project_path"]): return err
@@ -226,12 +252,14 @@ class BobSuiteMCPServer:
                 ),
                 Tool(
                     name="scan_git_diff",
-                    description="Scan only changed lines from git diff",
+                    description="Scan only changed lines from git diff with configurable limits to prevent timeouts",
                     inputSchema={
                         "type": "object",
                         "properties": {
                             "repo_path": {"type": "string"},
-                            "staged": {"type": "boolean", "default": True}
+                            "staged": {"type": "boolean", "default": True},
+                            "max_files": {"type": "integer", "default": 10, "description": "Maximum number of files to scan (prevents timeout)"},
+                            "max_file_size_kb": {"type": "integer", "default": 500, "description": "Maximum file size in KB to scan (prevents timeout)"}
                         },
                         "required": ["repo_path"]
                     }
@@ -365,29 +393,57 @@ class BobSuiteMCPServer:
             try:
                 # Route the request
                 if handler := dispatcher.get(name):
-                    return await handler(arguments or {})
+                    logger.debug(f"Calling tool: {name}", arguments=arguments)
+                    result = await handler(arguments or {})
+                    logger.debug(f"Tool completed: {name}")
+                    return result
                 else:
+                    logger.error(f"Unknown tool requested: {name}")
                     return self._error_response(f"Unknown tool: {name}", available_tools=list(dispatcher.keys()))
                     
             except Exception as e:
-                return self._error_response(str(e), error_type=type(e).__name__, tool_name=name, arguments=arguments)
+                logger.exception(f"Tool execution failed: {name}", tool_name=name, error_type=type(e).__name__)
+                # Include full traceback in error response for debugging
+                tb = traceback.format_exc()
+                return self._error_response(
+                    str(e),
+                    error_type=type(e).__name__,
+                    tool_name=name,
+                    arguments=arguments,
+                    traceback=tb
+                )
 
     async def run(self):
         """Start the MCP server"""
         from mcp.server.stdio import stdio_server
         
-        async with stdio_server() as (read_stream, write_stream):
-            await self.server.run(
-                read_stream,
-                write_stream,
-                self.server.create_initialization_options()
-            )
+        logger.info("Starting MCP server with stdio transport")
+        try:
+            async with stdio_server() as (read_stream, write_stream):
+                logger.info("MCP server running and ready to accept requests")
+                await self.server.run(
+                    read_stream,
+                    write_stream,
+                    self.server.create_initialization_options()
+                )
+        except Exception as e:
+            logger.exception("MCP server encountered a fatal error")
+            raise
 
 
 async def main():
     """Main entry point"""
-    server = BobSuiteMCPServer()
-    await server.run()
+    try:
+        logger.info("=" * 60)
+        logger.info("BobSuite MCP Server Starting")
+        logger.info("=" * 60)
+        server = BobSuiteMCPServer()
+        await server.run()
+    except KeyboardInterrupt:
+        logger.info("Server shutdown requested by user")
+    except Exception as e:
+        logger.critical("Server failed to start or encountered fatal error", exc_info=True)
+        sys.exit(1)
 
 
 if __name__ == "__main__":

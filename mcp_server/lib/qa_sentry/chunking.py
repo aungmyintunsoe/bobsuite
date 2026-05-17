@@ -52,9 +52,22 @@ async def chunk_and_analyze(
     valid_chunks = 0
 
     for result in chunk_results:
-        if isinstance(result, dict) and 'findings' in result:
-            all_findings.extend(result['findings'])
-            total_health_score += result.get('summary', {}).get('health_score', 50)
+        # Skip exceptions or invalid results
+        if isinstance(result, Exception):
+            continue
+        if not isinstance(result, dict):
+            continue
+        if 'findings' in result:
+            findings = result['findings']
+            # Ensure findings is a list, not a set
+            if isinstance(findings, set):
+                findings = list(findings)
+            elif not isinstance(findings, list):
+                findings = []
+            all_findings.extend(findings)
+            summary = result.get('summary', {})
+            if isinstance(summary, dict):
+                total_health_score += summary.get('health_score', 50)
             valid_chunks += 1
 
     avg_health_score = total_health_score // valid_chunks if valid_chunks > 0 else 50
@@ -108,11 +121,23 @@ async def _analyze_chunk(
         )
 
         # Adjust line numbers to reflect actual file position
-        for finding in finder_results.get('findings', []):
-            finding['line_numbers'] = [
-                ln + chunk['start_line'] - 1
-                for ln in finding.get('line_numbers', [])
-            ]
+        findings = finder_results.get('findings', [])
+        # Ensure findings is a list
+        if isinstance(findings, set):
+            findings = list(findings)
+            finder_results['findings'] = findings
+        elif not isinstance(findings, list):
+            finder_results['findings'] = []
+            findings = []
+            
+        for finding in findings:
+            if isinstance(finding, dict):
+                line_numbers = finding.get('line_numbers', [])
+                if isinstance(line_numbers, list):
+                    finding['line_numbers'] = [
+                        ln + chunk['start_line'] - 1
+                        for ln in line_numbers
+                    ]
 
         return finder_results
     except Exception as e:

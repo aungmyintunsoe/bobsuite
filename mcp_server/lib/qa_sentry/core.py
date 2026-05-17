@@ -148,11 +148,33 @@ Return ONLY valid JSON with this schema:
                     self.system_prompt, self.temperature, self.max_tokens,
                     additional_context
                 )
+                
+                # Ensure finder_results is a dict
+                if not isinstance(finder_results, dict):
+                    finder_results = {
+                        "summary": {"health_score": 50, "risk_level": "MEDIUM", "executive_summary": "Invalid finder results"},
+                        "findings": []
+                    }
+                
                 final_results = await critic_pass(
                     self.watsonx, code, finder_results, language, file_path,
                     self.temperature, self.max_tokens
                 )
+                
+                # Ensure final_results is a dict
+                if not isinstance(final_results, dict):
+                    final_results = {
+                        "summary": {"health_score": 50, "risk_level": "MEDIUM", "executive_summary": "Invalid critic results"},
+                        "findings": []
+                    }
 
+                # Ensure findings is a list, not a set
+                findings = final_results.get("findings", [])
+                if isinstance(findings, set):
+                    findings = list(findings)
+                elif not isinstance(findings, list):
+                    findings = []
+                
                 result = {
                     "success": True,
                     "file_path": file_path,
@@ -160,7 +182,7 @@ Return ONLY valid JSON with this schema:
                     "scan_type": scan_type,
                     "timestamp": get_timestamp(),
                     "summary": final_results.get("summary", {}),
-                    "findings": final_results.get("findings", []),
+                    "findings": findings,
                     "lines_analyzed": len(lines)
                 }
 
@@ -176,10 +198,12 @@ Return ONLY valid JSON with this schema:
             return result
 
         except Exception as e:
+            import traceback
             return {
                 "success": False,
                 "error": f"Unexpected error during scan: {str(e)}",
                 "error_type": type(e).__name__,
+                "traceback": traceback.format_exc(),
                 "file_path": file_path
             }
 
@@ -231,10 +255,12 @@ Return ONLY valid JSON with this schema:
     async def scan_git_diff(
         self,
         repo_path: str,
-        staged: bool = True
+        staged: bool = True,
+        max_files: int = 10,
+        max_file_size_kb: int = 500
     ) -> List[Dict[str, Any]]:
-        """Scan only changed lines from git diff (delegates to git_utils)."""
-        return await _scan_git_diff(self, repo_path, staged)
+        """Scan only changed lines from git diff with configurable limits (delegates to git_utils)."""
+        return await _scan_git_diff(self, repo_path, staged, max_files, max_file_size_kb)
 
     # ------------------------------------------------------------------ #
     #                       TEST GENERATION                               #

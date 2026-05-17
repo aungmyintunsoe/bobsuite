@@ -58,20 +58,42 @@ def _validate_structured_data(data: Dict[str, Any]) -> Dict[str, Any]:
     missing_critical = []
     
     for pillar_id in critical_pillars:
-        if pillar_id not in pillars or not pillars[pillar_id].get("answer"):
+        if pillar_id not in pillars:
             missing_critical.append(pillar_id)
+        else:
+            pillar_value = pillars[pillar_id]
+            # Handle both dict format {"answer": "text"} and simple string format
+            if isinstance(pillar_value, dict):
+                if not pillar_value.get("answer"):
+                    missing_critical.append(pillar_id)
+            elif isinstance(pillar_value, str):
+                if not pillar_value.strip():
+                    missing_critical.append(pillar_id)
+            else:
+                missing_critical.append(pillar_id)
     
     if missing_critical:
-        pillar_names = [get_pillar_by_id(pid)["title"] for pid in missing_critical if get_pillar_by_id(pid)]
+        pillar_names = []
+        for pid in missing_critical:
+            pillar_def = get_pillar_by_id(pid)
+            if pillar_def:
+                pillar_names.append(pillar_def["title"])
         return {
             "valid": False,
             "error": f"Missing critical pillars: {', '.join(missing_critical)}",
-            "suggestions": [f"Please provide answers for: {', '.join(pillar_names)}"]
+            "suggestions": [f"Please provide answers for: {', '.join(pillar_names)}"] if pillar_names else ["Check pillar IDs against framework definition"]
         }
 
     # Check minimum response lengths
     for pillar_id, pillar_data in pillars.items():
-        answer = pillar_data.get("answer", "")
+        # Handle both dict format {"answer": "text"} and simple string format
+        if isinstance(pillar_data, dict):
+            answer = pillar_data.get("answer", "")
+        elif isinstance(pillar_data, str):
+            answer = pillar_data
+        else:
+            answer = str(pillar_data)
+            
         pillar_def = get_pillar_by_id(pillar_id)
         
         if not pillar_def:

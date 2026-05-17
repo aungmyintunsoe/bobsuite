@@ -141,7 +141,9 @@ def save_prd_to_file(prd_content: str, output_path: str) -> bool:
         return True
     except Exception as e:
         # Log error but don't fail the entire operation
-        print(f"Warning: Failed to save PRD to {output_path}: {str(e)}")
+        from lib.utils.logging import get_logger
+        logger = get_logger("ideation-formatters")
+        logger.warning(f"Failed to save PRD to {output_path}", error=str(e))
         return False
 
 

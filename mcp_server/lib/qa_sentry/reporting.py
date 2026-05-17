@@ -13,6 +13,10 @@ def generate_report(
     output_path: Optional[str] = None
 ) -> str:
     """Generate a markdown report from scan results."""
+    # Ensure scan_results is a list
+    if not isinstance(scan_results, list):
+        scan_results = [scan_results] if scan_results else []
+    
     report_lines = [
         format_markdown_header("Code Quality Analysis Report", {
             "generated": get_timestamp(),
@@ -21,9 +25,18 @@ def generate_report(
     ]
 
     for result in scan_results:
+        # Ensure result is a dictionary
+        if not isinstance(result, dict):
+            report_lines.append(f"\n## Invalid Result")
+            report_lines.append(f"\n**Error:** Result is not a dictionary (type: {type(result).__name__})\n")
+            continue
+            
         if not result.get("success"):
             report_lines.append(f"\n## {result.get('file_path', 'Unknown')}")
-            report_lines.append(f"\n**Error:** {result.get('error', 'Unknown error')}\n")
+            report_lines.append(f"\n**Error:** {result.get('error', 'Unknown error')}")
+            if result.get('traceback'):
+                report_lines.append(f"\n\n**Traceback:**\n```\n{result.get('traceback')}\n```")
+            report_lines.append("\n")
             continue
 
         summary = result.get("summary", {})

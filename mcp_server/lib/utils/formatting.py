@@ -12,6 +12,10 @@ def get_timestamp() -> str:
 
 def format_markdown_header(title: str, metadata: dict) -> str:
     """Format a standard markdown header for reports and docs"""
+    # Ensure metadata is a dictionary
+    if not isinstance(metadata, dict):
+        metadata = {}
+    
     lines = [f"# {title}"]
     for key, value in metadata.items():
         # Format key: capitalize and replace underscores with spaces

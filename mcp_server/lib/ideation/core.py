@@ -22,7 +22,10 @@ from lib.ideation.formatters import (
     format_error_response,
     format_success_response
 )
-from lib.utils import get_timestamp
+from lib.utils import get_timestamp, get_logger
+
+# Initialize logger
+logger = get_logger("ideation-engine")
 
 
 class IdeationEngine:
@@ -35,7 +38,9 @@ class IdeationEngine:
         Args:
             watsonx_client: WatsonxClient instance for PRD synthesis
         """
+        logger.info("Initializing Ideation Engine")
         self.watsonx = watsonx_client
+        logger.debug("Ideation Engine initialized successfully")
 
     # ------------------------------------------------------------------ #
     #                       FRAMEWORK RETRIEVAL                           #
@@ -95,56 +100,104 @@ class IdeationEngine:
                 - metadata: dict (generation info)
         """
         try:
+            logger.info("Starting PRD synthesis", project_name=project_name or "unnamed")
+            
             # Validate project name if provided
             if project_name and not validate_project_name(project_name):
+                logger.warning("Invalid project name provided", project_name=project_name)
                 return format_error_response(
                     error="Invalid project name",
                     suggestions=["Use alphanumeric characters, hyphens, and underscores only"]
                 )
 
-            # Validate input
-            validation_result = validate_conversation_data(conversation_data)
+            # Validate input with detailed error handling
+            logger.debug("Validating conversation data")
+            try:
+                validation_result = validate_conversation_data(conversation_data)
+            except Exception as ve:
+                logger.exception("Validation error occurred", error_type=type(ve).__name__)
+                import traceback
+                return format_error_response(
+                    error=f"Validation error: {str(ve)}\n\nTraceback:\n{traceback.format_exc()}",
+                    error_type=type(ve).__name__
+                )
+                
             if not validation_result["valid"]:
+                logger.warning("Conversation data validation failed", error=validation_result["error"])
                 return format_error_response(
                     error=validation_result["error"],
                     suggestions=validation_result.get("suggestions", [])
                 )
+            
+            logger.debug("Conversation data validated successfully")
 
             # Load sample PRD for reference
-            sample_prd = load_sample_prd()
+            logger.debug("Loading sample PRD template")
+            try:
+                sample_prd = load_sample_prd()
+                logger.debug("Sample PRD loaded successfully")
+            except Exception as le:
+                logger.exception("Error loading sample PRD", error_type=type(le).__name__)
+                import traceback
+                return format_error_response(
+                    error=f"Error loading sample PRD: {str(le)}\n\nTraceback:\n{traceback.format_exc()}",
+                    error_type=type(le).__name__
+                )
 
             # Generate PRD using watsonx.ai
-            prd_markdown = await self.watsonx.synthesize_prd(
-                conversation_data=conversation_data,
-                sample_prd=sample_prd,
-                project_name=project_name
-            )
+            logger.info("Generating PRD with watsonx.ai", project_name=project_name or "unnamed")
+            try:
+                prd_markdown = await self.watsonx.synthesize_prd(
+                    conversation_data=conversation_data,
+                    sample_prd=sample_prd,
+                    project_name=project_name
+                )
+                logger.info("PRD generated successfully", length=len(prd_markdown))
+            except Exception as ge:
+                logger.exception("Error generating PRD with watsonx", error_type=type(ge).__name__)
+                import traceback
+                return format_error_response(
+                    error=f"Error generating PRD with watsonx: {str(ge)}\n\nTraceback:\n{traceback.format_exc()}",
+                    error_type=type(ge).__name__
+                )
 
             # Determine output path (AI-driven or user-specified)
+            logger.debug("Determining output path")
             final_output_path = determine_output_path(
                 output_path=output_path,
                 project_name=project_name
             )
+            logger.debug("Output path determined", path=final_output_path)
 
             # Save to file
+            logger.debug("Saving PRD to file", path=final_output_path)
             file_saved = save_prd_to_file(prd_markdown, final_output_path)
+            if file_saved:
+                logger.info("PRD saved successfully", path=final_output_path)
+            else:
+                logger.warning("Failed to save PRD to file", path=final_output_path)
 
-            # Prepare metadata
+            # Prepare metadata - handle pillars safely
+            pillars = conversation_data.get("pillars", {})
+            pillar_count = len(pillars) if isinstance(pillars, dict) else 0
+            
             metadata = {
                 "generated_at": get_timestamp(),
                 "project_name": project_name or "Unnamed Project",
-                "pillar_count": len(conversation_data.get("pillars", {})),
+                "pillar_count": pillar_count,
                 "file_saved": file_saved,
                 "output_path": final_output_path if file_saved else None
             }
 
             # Format final output
+            logger.debug("Formatting PRD output")
             formatted_prd = format_prd_output(
                 prd_markdown=prd_markdown,
                 metadata=metadata,
                 file_path=final_output_path if file_saved else None
             )
 
+            logger.info("PRD synthesis completed successfully", project_name=project_name or "unnamed")
             return format_success_response(
                 prd_markdown=formatted_prd,
                 file_path=final_output_path if file_saved else None,
@@ -152,8 +205,11 @@ class IdeationEngine:
             )
 
         except Exception as e:
+            logger.exception("Unexpected error during PRD synthesis", error_type=type(e).__name__)
+            import traceback
+            tb = traceback.format_exc()
             return format_error_response(
-                error=f"Error generating PRD: {str(e)}",
+                error=f"Error generating PRD: {str(e)}\n\nTraceback:\n{tb}",
                 error_type=type(e).__name__
             )
 

@@ -12,15 +12,19 @@ from typing import Dict, Any, List
 async def scan_git_diff(
     sentry,
     repo_path: str,
-    staged: bool = True
+    staged: bool = True,
+    max_files: int = 10,
+    max_file_size_kb: int = 500
 ) -> List[Dict[str, Any]]:
     """
-    Scan only changed lines from git diff.
+    Scan only changed lines from git diff with limits to prevent timeouts.
 
     Args:
         sentry: QASentry instance (for calling scan_code)
         repo_path: Path to git repository
         staged: If True, scan staged changes; else scan working directory
+        max_files: Maximum number of files to scan (default: 10)
+        max_file_size_kb: Maximum file size in KB to scan (default: 500KB)
 
     Returns:
         List of findings for changed lines only
@@ -51,11 +55,34 @@ async def scan_git_diff(
                 "message": "No changes detected in git diff"
             }]
 
-        # Analyze each changed file
+        # Apply file count limit
+        if len(changed_files) > max_files:
+            return [{
+                "success": False,
+                "error": f"Too many changed files ({len(changed_files)}). Maximum allowed: {max_files}",
+                "suggestion": "Commit changes in smaller batches or increase max_files parameter",
+                "changed_file_count": len(changed_files),
+                "max_files": max_files
+            }]
+
+        # Analyze each changed file with size checks
         all_results = []
+        skipped_files = []
+        
         for file_info in changed_files:
             full_path = Path(repo_path) / file_info['path']
+            
             if not full_path.exists():
+                continue
+
+            # Check file size
+            file_size_kb = full_path.stat().st_size / 1024
+            if file_size_kb > max_file_size_kb:
+                skipped_files.append({
+                    "path": file_info['path'],
+                    "size_kb": round(file_size_kb, 2),
+                    "reason": f"File too large ({round(file_size_kb, 2)}KB > {max_file_size_kb}KB)"
+                })
                 continue
 
             # Scan the file using sentry's core pipeline
@@ -72,6 +99,14 @@ async def scan_git_diff(
                 scan_result['changed_lines'] = file_info['changed_lines']
 
             all_results.append(scan_result)
+
+        # Add summary if files were skipped
+        if skipped_files:
+            all_results.insert(0, {
+                "success": True,
+                "message": f"Scanned {len(all_results)} files, skipped {len(skipped_files)} files",
+                "skipped_files": skipped_files
+            })
 
         return all_results
 

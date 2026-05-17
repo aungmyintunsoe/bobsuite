@@ -1,0 +1,17 @@
+{
+  "timestamp": "2026-05-17T15:42:31.103512",
+  "result": {
+    "success": true,
+    "file_path": "mcp_server/lib/utils/formatting.py",
+    "language": "Python",
+    "scan_type": "quality",
+    "timestamp": "2026-05-17T07:42:31.103469Z",
+    "summary": {
+      "health_score": 95,
+      "risk_level": "LOW",
+      "executive_summary": "The module contains no critical security flaws, logic errors, performance bottlenecks, or architectural violations. All functions are pure, side-effect free, and handle edge cases gracefully."
+    },
+    "findings": [],
+    "lines_analyzed": 27
+  }
+}

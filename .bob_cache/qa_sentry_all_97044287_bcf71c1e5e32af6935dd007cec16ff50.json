@@ -1,0 +1,73 @@
+{
+  "timestamp": "2026-05-17T15:47:59.093642",
+  "result": {
+    "success": true,
+    "file_path": "mcp_server/server.py",
+    "language": "Python",
+    "scan_type": "all",
+    "timestamp": "2026-05-17T07:47:59.093600Z",
+    "summary": {
+      "health_score": 70,
+      "risk_level": "HIGH",
+      "executive_summary": "The codebase contains several architectural and security concerns that could lead to production failures if unaddressed. Key issues include potential SQL injection, resource leaks, and inefficient asynchronous patterns."
+    },
+    "findings": [
+      {
+        "id": "SEC-001",
+        "category": "SECURITY",
+        "severity": "CRITICAL",
+        "line_numbers": [
+          3
+        ],
+        "title": "Potential SQL Injection via String Interpolation",
+        "deep_dive": "The code uses f-string interpolation to construct SQL queries, which can lead to SQL injection vulnerabilities if `user_id` is not properly sanitized. Blast Radius: An attacker could manipulate `user_id` to delete arbitrary records or perform unauthorized database operations.",
+        "solution_explanation": "Use parameterized queries to prevent SQL injection. For example, replace `cursor.execute(f\"DELETE FROM profiles WHERE id = '{user_id}'\")` with `cursor.execute(\"DELETE FROM profiles WHERE id = %s\", (user_id,))`.",
+        "reference": "CWE-89: Improper Neutralization of Special Elements used in an SQL Command ('SQL Injection')",
+        "fix_code_snippet": "cursor.execute(\"DELETE FROM profiles WHERE id = %s\", (user_id,))"
+      },
+      {
+        "id": "PERF-001",
+        "category": "PERFORMANCE",
+        "severity": "HIGH",
+        "line_numbers": [
+          3,
+          4,
+          5
+        ],
+        "title": "Sequential Async Await Loop Bottleneck (N+1 Execution)",
+        "deep_dive": "The loop awaits each database fetch sequentially, causing significant latency. Blast Radius: Under load, this pattern will cause request timeouts and degrade user experience.",
+        "solution_explanation": "Use `asyncio.gather` or `await asyncio.as_completed` to run database fetches concurrently. This reduces total execution time from O(n) to O(1) in terms of latency.",
+        "reference": "Big-O Analysis: Shifts from O(n) sequential latency to O(1) concurrent latency",
+        "fix_code_snippet": "results = await asyncio.gather(*(db.fetchDetails(item.id) for item in items))"
+      },
+      {
+        "id": "ARCH-001",
+        "category": "ARCHITECTURE",
+        "severity": "MEDIUM",
+        "line_numbers": [
+          2,
+          3
+        ],
+        "title": "Unprotected File Handle Resource Leak",
+        "deep_dive": "The file is opened without a context manager, risking resource leaks if exceptions occur. Blast Radius: In high-concurrency environments, this could exhaust file descriptors, causing service crashes.",
+        "solution_explanation": "Wrap file operations in a `with` statement to ensure proper closure. This guarantees the file is closed even if an exception is raised.",
+        "reference": "CWE-400: Uncontrolled Resource Consumption",
+        "fix_code_snippet": "with open(\"transactions.log\", \"a\") as file:\n    file.write(data)"
+      },
+      {
+        "id": "LOGIC-001",
+        "category": "LOGIC",
+        "severity": "MEDIUM",
+        "line_numbers": [
+          3
+        ],
+        "title": "Unhandled Exception in Transaction Logging",
+        "deep_dive": "The comment indicates an exception may occur, but no handling is present. Blast Radius: Unhandled exceptions could cause the application to crash or behave unpredictably.",
+        "solution_explanation": "Implement proper exception handling around the logging operation. Log the error and ensure the application continues running.",
+        "reference": "SOLID Principle: Fail Fast and Fail Safe",
+        "fix_code_snippet": "try:\n    file.write(data)\nexcept Exception as e:\n    logger.error(f\"Failed to log transaction: {e}\")"
+      }
+    ],
+    "lines_analyzed": 394
+  }
+}
