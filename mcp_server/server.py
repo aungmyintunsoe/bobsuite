@@ -214,11 +214,10 @@ class BobSuiteMCPServer:
         
         @self.server.list_tools()
         async def list_tools() -> list[Tool]:
-            # Kept your original Tool definitions schema identically here to prevent breaking changes.
             return [
                 Tool(
-                    name="scan_code_quality",
-                    description="Analyze code for bugs, vulnerabilities, and quality issues using watsonx.ai. Exposes optional additional_context for feeding live web searches or CVE documentation.",
+                    name="scan_code",
+                    description="Analyze code for bugs, vulnerabilities, and quality issues.",
                     inputSchema={
                         "type": "object",
                         "properties": {
@@ -227,15 +226,15 @@ class BobSuiteMCPServer:
                             "auto_fix": {"type": "boolean", "default": False},
                             "additional_context": {
                                 "type": "string",
-                                "description": "Optional external context. You (IBM Bob) should run web searches for known vulnerabilities of third-party libraries imported in this file, and supply those findings here."
+                                "description": "Optional external context for CVEs or related issues."
                             }
                         },
                         "required": ["file_path"]
                     }
                 ),
                 Tool(
-                    name="generate_documentation",
-                    description="Generate comprehensive documentation for code using watsonx.ai. Supports 12 documentation types including user manuals, tutorials, API docs, and more.",
+                    name="generate_docs",
+                    description="Generate documentation for code (supports 12 types like API, tutorial, manual).",
                     inputSchema={
                         "type": "object",
                         "properties": {
@@ -251,8 +250,8 @@ class BobSuiteMCPServer:
                     }
                 ),
                 Tool(
-                    name="scan_git_diff",
-                    description="Scan only changed lines from git diff with configurable limits to prevent timeouts",
+                    name="scan_diff",
+                    description="Scan only changed lines from git diff.",
                     inputSchema={
                         "type": "object",
                         "properties": {
@@ -265,8 +264,8 @@ class BobSuiteMCPServer:
                     }
                 ),
                 Tool(
-                    name="get_project_framework",
-                    description="Retrieve the 7-pillar ideation framework for structured feature planning.",
+                    name="get_framework",
+                    description="Retrieve the 7-pillar ideation framework for feature planning.",
                     inputSchema={
                         "type": "object",
                         "properties": {
@@ -275,8 +274,8 @@ class BobSuiteMCPServer:
                     }
                 ),
                 Tool(
-                    name="synthesize_project_plan",
-                    description="Generate a comprehensive PRD from conversation data.",
+                    name="generate_prd",
+                    description="Generate a Product Requirements Document (PRD) from conversation.",
                     inputSchema={
                         "type": "object",
                         "properties": {
@@ -288,8 +287,8 @@ class BobSuiteMCPServer:
                     }
                 ),
                 Tool(
-                    name="generate_dependency_chain",
-                    description="Generate a visual dependency chain diagram.",
+                    name="map_dependencies",
+                    description="Generate a visual dependency chain diagram for a project.",
                     inputSchema={
                         "type": "object",
                         "properties": {
@@ -302,8 +301,8 @@ class BobSuiteMCPServer:
                     }
                 ),
                 Tool(
-                    name="generate_feature_flow",
-                    description="Generate a visual feature flow map showing user journeys.",
+                    name="map_features",
+                    description="Generate a visual feature flow map of user journeys.",
                     inputSchema={
                         "type": "object",
                         "properties": {
@@ -315,7 +314,7 @@ class BobSuiteMCPServer:
                     }
                 ),
                 Tool(
-                    name="generate_project_concept",
+                    name="map_concept",
                     description="Generate a high-level project concept map.",
                     inputSchema={
                         "type": "object",
@@ -327,8 +326,8 @@ class BobSuiteMCPServer:
                     }
                 ),
                 Tool(
-                    name="generate_network_performance_tests",
-                    description="Generate comprehensive network performance tests for API endpoints and network calls. Bob autonomously selects the best testing framework or uses the one you specify (Jest, Postman/Newman, Pytest, Artillery, k6, etc.).",
+                    name="generate_network_tests",
+                    description="Generate network performance tests for API endpoints.",
                     inputSchema={
                         "type": "object",
                         "properties": {
@@ -338,11 +337,11 @@ class BobSuiteMCPServer:
                             },
                             "testing_library": {
                                 "type": "string",
-                                "description": "Optional: Specific testing library to use (e.g., 'jest', 'postman', 'pytest', 'artillery', 'k6'). If not specified, Bob will autonomously select the best one."
+                                "description": "Optional: Specific testing library to use"
                             },
                             "test_requirements": {
                                 "type": "string",
-                                "description": "Optional: Specific requirements or scenarios to test (e.g., 'test rate limiting', 'concurrent requests', 'timeout handling')"
+                                "description": "Optional: Specific requirements or scenarios to test"
                             }
                         },
                         "required": ["file_path"]
@@ -350,7 +349,7 @@ class BobSuiteMCPServer:
                 ),
                 Tool(
                     name="generate_unit_tests",
-                    description="Generate comprehensive unit tests following Steve Sanderson principles (S/S/R naming, isolation, mocking, single assertions). Bob autonomously selects the best testing framework or uses the one you specify (Jest, Pytest, JUnit, NUnit, etc.).",
+                    description="Generate unit tests following Steve Sanderson principles (S/S/R naming, mocking).",
                     inputSchema={
                         "type": "object",
                         "properties": {
@@ -360,7 +359,7 @@ class BobSuiteMCPServer:
                             },
                             "testing_library": {
                                 "type": "string",
-                                "description": "Optional: Specific testing library to use (e.g., 'jest', 'pytest', 'junit', 'nunit'). If not specified, Bob will autonomously select the best one."
+                                "description": "Optional: Specific testing library to use"
                             },
                             "test_requirements": {
                                 "type": "string",
@@ -378,15 +377,15 @@ class BobSuiteMCPServer:
             
             # Map tools to their designated handler methods
             dispatcher = {
-                "scan_code_quality": self._handle_scan_code_quality,
-                "generate_documentation": self._handle_generate_docs,
-                "scan_git_diff": self._handle_scan_git_diff,
-                "get_project_framework": self._handle_get_framework,
-                "synthesize_project_plan": self._handle_synthesize_plan,
-                "generate_dependency_chain": self._handle_dependency_chain,
-                "generate_feature_flow": self._handle_feature_flow,
-                "generate_project_concept": self._handle_project_concept,
-                "generate_network_performance_tests": self._handle_generate_network_tests,
+                "scan_code": self._handle_scan_code_quality,
+                "generate_docs": self._handle_generate_docs,
+                "scan_diff": self._handle_scan_git_diff,
+                "get_framework": self._handle_get_framework,
+                "generate_prd": self._handle_synthesize_plan,
+                "map_dependencies": self._handle_dependency_chain,
+                "map_features": self._handle_feature_flow,
+                "map_concept": self._handle_project_concept,
+                "generate_network_tests": self._handle_generate_network_tests,
                 "generate_unit_tests": self._handle_generate_unit_tests
             }
 
